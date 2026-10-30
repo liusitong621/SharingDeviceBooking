@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>设备借用助手 · 制度问答</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app">
+    <!-- 侧栏：品牌 + 新建对话 + 运行状态。状态从 /health 取，不用前端猜 -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">借</div>
+        <div class="brand-text">
+          <strong>设备借用助手</strong>
+          <small>制度问答 · MVP</small>
+        </div>
+      </div>
+
+      <button id="new-chat" class="btn-new" type="button">
+        <span>＋</span> 新建对话
+      </button>
+
+      <div class="side-info">
+        <div class="row"><span>知识库</span><b id="kb-state">检查中…</b></div>
+        <div class="row"><span>模型</span><b id="llm-state">—</b></div>
+      </div>
+
+      <!-- 当前登录者。数据来自 /api/v1/auth/me，服务端每次请求都会重新校验身份，
+           这里只是把"你是谁"显示出来，不做任何权限判断。 -->
+      <div class="side-user">
+        <div class="su-name" id="me-name">加载中…</div>
+        <div class="su-sub" id="me-sub"></div>
+        <div class="su-links">
+          <a href="/bookings">我的预约</a>
+          <a href="/admin" id="me-admin" hidden>管理后台</a>
+          <button type="button" id="btn-logout" class="su-out">退出</button>
+        </div>
+      </div>
+
+      <div class="side-foot">
+        回答仅依据制度条文生成。<br>
+        以管理员签发的正式版本为准。
+      </div>
+    </aside>
+
+    <!-- 主区 -->
+    <main class="main">
+      <header class="topbar">
+        <div class="titles">
+          <h1>制度问答</h1>
+          <p>可问：借用时段 · 取消规则 · 设备下架 · 取还登记</p>
+        </div>
+        <span class="tag" id="degraded-badge" hidden>降级模式</span>
+      </header>
+
+      <div class="messages" id="messages">
+        <!-- 空态：给三个可直接点击的示例问题，降低首次使用门槛 -->
+        <div class="empty" id="empty-state">
+          <h2>问点什么</h2>
+          <p>下面的问题可以直接点：</p>
+          <div class="samples">
+            <button class="sample" type="button">每天最多可以预约几格？</button>
+            <button class="sample" type="button">取消预约后别人能马上约同一格吗？</button>
+            <button class="sample" type="button">设备坏了怎么下架，员工能自己改状态吗？</button>
+            <button class="sample" type="button">预约了没去会怎么样？</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="status-line" id="status-line" hidden>
+          <span class="spinner"></span><span id="status-text">正在检索制度…</span>
+        </div>
+
+        <form id="form">
+          <textarea id="input" rows="1" maxlength="500"
+                    placeholder="输入你的问题，Enter 发送，Shift + Enter 换行"></textarea>
+          <button id="send" class="send" type="submit">发送</button>
+        </form>
+
+        <div class="hint">
+          <span id="counter">0 / 500</span>
+          <span>回答附引用来源，点开可核对原文</span>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

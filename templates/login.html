@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 · 设备借用</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <div class="logo">借</div>
+      <div>
+        <strong>设备借用</strong>
+        <small>制度问答 · 预约管理</small>
+      </div>
+    </div>
+
+    {% if error %}
+    <div class="alert error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/login">
+      {# CSRF 用双提交 Cookie：表单带 _csrf，服务端与 sdb_csrf 比对 #}
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <input type="hidden" name="next" value="{{ next }}">
+
+      <div class="field">
+        <label for="emp_no">工号</label>
+        <input id="emp_no" name="emp_no" type="text" autocomplete="username"
+               placeholder="例如 1001" required autofocus>
+      </div>
+
+      <div class="field">
+        <label for="password">密码</label>
+        <input id="password" name="password" type="password" autocomplete="current-password"
+               placeholder="首次登录后需修改" required>
+      </div>
+
+      <button type="submit" class="btn primary">登录</button>
+    </form>
+
+    <div class="auth-foot">
+      演示账号：<code>admin</code> / <code>Admin@12345</code>（管理员）、
+      <code>1001</code> / <code>Staff@12345</code>（员工）。<br>
+      首次登录会强制修改密码，密码连续输错 5 次锁定 10 分钟。
+    </div>
+  </div>
+</div>
+</body>
+</html>

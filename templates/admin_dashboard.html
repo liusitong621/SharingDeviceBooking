@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}概览{% endblock %}
+{% block heading %}概览{% endblock %}
+{% block subheading %}今天是 {{ today }} · 数据实时来自 SQLite{% endblock %}
+
+{% block body %}
+<div class="grid-4">
+  <div class="stat">
+    <div class="k">设备总数</div>
+    <div class="v">{{ stats.devices }}<small>台</small></div>
+  </div>
+  <div class="stat">
+    <div class="k">已下架</div>
+    <div class="v">{{ stats.devices_offline }}<small>台</small></div>
+  </div>
+  <div class="stat">
+    <div class="k">今日预约</div>
+    <div class="v">{{ stats.bookings_today }}<small>格</small></div>
+  </div>
+  <div class="stat">
+    <div class="k">有效预约（全部）</div>
+    <div class="v">{{ stats.bookings_active }}<small>格</small></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-hd">
+    <h2>当前可用范围</h2>
+    <span class="badge mute">一期只做这些</span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>能力</th>
+        <th>状态</th>
+        <th>说明</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>制度问答（带引用）</td>
+        <td><span class="badge ok">已上线</span></td>
+        <td>员工提问 → 混合检索 → 流式回答，回答附制度来源</td>
+      </tr>
+      <tr>
+        <td>预约与取消</td>
+        <td><span class="badge ok">已上线</span></td>
+        <td>6 格时段、单日 2 格上限、冲突返回 409、过期自动释放</td>
+      </tr>
+      <tr>
+        <td>设备上下架</td>
+        <td><span class="badge ok">已上线</span></td>
+        <td>设备坏了立刻从可约池摘掉，不影响已生效的预约</td>
+      </tr>
+      <tr>
+        <td>制度知识库管理</td>
+        <td><span class="badge warn">待上线</span></td>
+        <td>上传 markdown/PDF → 切片 → 入库 → 删除重建</td>
+      </tr>
+      <tr>
+        <td>提示词模板管理</td>
+        <td><span class="badge warn">待上线</span></td>
+        <td>改模板立即生效，不重启进程</td>
+      </tr>
+      <tr>
+        <td>对话审计</td>
+        <td><span class="badge warn">待上线</span></td>
+        <td>按员工/时间筛选，标记疑似违规借用</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-hd">
+    <h2>账号概况</h2>
+  </div>
+  <table>
+    <tbody>
+      <tr><td style="width:160px;color:var(--muted)">员工账号</td><td>{{ stats.users }} 个（停用 {{ stats.users_disabled }} 个）</td></tr>
+      <tr><td style="color:var(--muted)">问答会话</td><td>{{ stats.sessions }} 个，共 {{ stats.messages }} 条消息</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ code }} · 设备借用</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+<div class="err-wrap">
+  <div class="err-card">
+    <div class="err-code">{{ code }}</div>
+    <h1>{{ message }}</h1>
+    <p>
+      {% if code == 403 %}当前账号没有这个页面的权限。如需开通请联系设备科管理员。
+      {% elif code == 404 %}页面不存在，可能是链接过期。
+      {% else %}请稍后重试；若持续出现，请联系管理员。{% endif %}
+    </p>
+    <a class="btn" href="/">返回问答助手</a>
+    {% if user %}<a class="btn" href="/bookings" style="margin-left:8px">我的预约</a>{% endif %}
+  </div>
+</div>
+</body>
+</html>

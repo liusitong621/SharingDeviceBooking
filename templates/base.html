@@ -1,0 +1,59 @@
+{# 后台基础布局：左侧导航 + 右侧内容。
+   导航里标注「待上线」的条目是刻意保留的：管理员知道后面会有这些功能，
+   比点进去看到 404 要好。 #}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}管理后台{% endblock %} · 设备借用</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand">
+      <div class="logo">借</div>
+      <div class="brand-text">
+        <strong>设备借用</strong>
+        <small>管理后台</small>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <a href="/admin" class="{% if current_path == '/admin' %}on{% endif %}">概览</a>
+      <a href="/admin/devices" class="{% if current_path.startswith('/admin/devices') %}on{% endif %}">设备台账</a>
+      <a href="/admin/policies" class="soon">制度知识库 <span class="tag">待上线</span></a>
+      <a href="/admin/prompts" class="soon">提示词模板 <span class="tag">待上线</span></a>
+      <a href="/admin/audit" class="soon">对话审计 <span class="tag">待上线</span></a>
+      <div class="sep"></div>
+      <a href="/">问答助手</a>
+      <a href="/bookings" class="{% if current_path == '/bookings' %}on{% endif %}">我的预约</a>
+    </nav>
+
+    <div class="side-foot">
+      <div class="me">
+        {{ user.name }}
+        <small>{{ user.emp_no }} · {{ user.dept or '未分配部门' }}</small>
+      </div>
+      <form method="post" action="/logout">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button type="submit" class="logout-btn">退出登录</button>
+      </form>
+    </div>
+  </aside>
+
+  <main class="content">
+    <header class="topbar">
+      <div>
+        <h1>{% block heading %}{% endblock %}</h1>
+        <p class="sub">{% block subheading %}{% endblock %}</p>
+      </div>
+      <div>{% block actions %}{% endblock %}</div>
+    </header>
+
+    {% block body %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}我的预约{% endblock %}
+{% block heading %}我的预约{% endblock %}
+{% block subheading %}每天最多 2 格 · 取消后该时段立即释放给他人{% endblock %}
+
+{% block actions %}
+<a class="btn primary" href="/">去预约</a>
+{% endblock %}
+
+{% block body %}
+<div class="card">
+  {% if bookings %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width:112px">日期</th>
+        <th style="width:130px">时段</th>
+        <th>设备</th>
+        <th style="width:92px">状态</th>
+        <th style="width:190px" class="num">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in bookings %}
+      <tr>
+        <td class="mono">{{ b.slot_date }}</td>
+        <td class="mono">{{ b.slot_start }}–{{ b.slot_end }}</td>
+        <td>
+          <strong>{{ b.device_name }}</strong>
+          <div style="color:var(--muted);font-size:12px">{{ b.asset_no }} · {{ b.location or '—' }}</div>
+        </td>
+        <td>
+          {% if b.status == 'booked' %}<span class="badge brand">待取用</span>
+          {% elif b.status == 'picked' %}<span class="badge ok">使用中</span>
+          {% elif b.status == 'returned' %}<span class="badge mute">已归还</span>
+          {% elif b.status == 'cancelled' %}<span class="badge mute">已取消</span>
+          {% else %}<span class="badge warn">已过期</span>{% endif %}
+        </td>
+        <td class="num">
+          {% if b.status == 'booked' %}
+          <form method="post" action="/bookings/{{ b.id }}/pickup" style="display:inline">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button type="submit" class="btn sm">登记取走</button>
+          </form>
+          <form method="post" action="/bookings/{{ b.id }}/cancel" style="display:inline">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button type="submit" class="btn sm danger">取消</button>
+          </form>
+          {% elif b.status == 'picked' %}
+          <form method="post" action="/bookings/{{ b.id }}/return" style="display:inline">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button type="submit" class="btn sm">登记归还</button>
+          </form>
+          {% else %}
+          <span style="color:var(--muted)">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">
+    还没有预约。<a href="/">去问答助手看有哪些设备可用</a>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-bd" style="color:var(--muted);font-size:13px">
+    取走与归还<strong style="color:var(--ink-2)">只能在这里点</strong>——
+    助手不会替你登记。人在不在现场只有你自己知道，让模型代点会污染设备使用记录。
+  </div>
+</div>
+{% endblock %}

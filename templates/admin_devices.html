@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}设备台账{% endblock %}
+{% block heading %}设备台账{% endblock %}
+{% block subheading %}下架后该设备立刻不可预约，已生效的预约不受影响{% endblock %}
+
+{% block body %}
+<div class="card">
+  {% if devices %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width:110px">资产编号</th>
+        <th>设备</th>
+        <th style="width:150px">位置</th>
+        <th style="width:88px">状态</th>
+        <th style="width:250px">今日时段</th>
+        <th style="width:96px" class="num">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in devices %}
+      <tr>
+        <td class="mono">{{ d.asset_no }}</td>
+        <td>
+          <strong>{{ d.name }}</strong>
+          <div style="color:var(--muted);font-size:12px">{{ d.model or '—' }}</div>
+        </td>
+        <td style="color:var(--ink-2)">{{ d.location or '—' }}</td>
+        <td>
+          {% if d.status == 'available' %}<span class="badge ok">可借</span>
+          {% elif d.status == 'borrowed' %}<span class="badge brand">借出中</span>
+          {% else %}<span class="badge danger">已下架</span>{% endif %}
+        </td>
+        <td>
+          <div class="slot-row">
+            {% for s in d.slots %}
+            <span class="slot {{ s.state }}">{{ s.start }}</span>
+            {% endfor %}
+          </div>
+          <div style="color:var(--muted);font-size:11.5px;margin-top:4px">空闲 {{ d.free_count }} 格</div>
+        </td>
+        <td class="num">
+          <form method="post" action="/admin/devices/{{ d.id }}/status" style="margin:0">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            {% if d.status == 'offline' %}
+            <input type="hidden" name="status" value="available">
+            <button type="submit" class="btn sm">恢复</button>
+            {% else %}
+            <input type="hidden" name="status" value="offline">
+            <button type="submit" class="btn sm danger">下架</button>
+            {% endif %}
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">还没有设备。设备台账可通过导入脚本批量写入。</div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-bd" style="color:var(--muted);font-size:13px">
+    <strong style="color:var(--ink-2)">为什么"下架"不改预约：</strong>
+    设备状态（可借/借出/下架）和预约占用状态是两条独立的线。
+    下架只拦截<em>新的</em>预约，已经约好的单仍需人工通知——这属于人和人的协调，
+    系统不该替用户擅自取消别人的预约。
+  </div>
+</div>
+{% endblock %}
