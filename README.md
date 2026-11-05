@@ -418,6 +418,19 @@ CREATE UNIQUE INDEX uq_booking_slot ON bookings(device_id, slot_date, slot_start
 - 后台上传的制度落在 `data/kb/uploads/`（不进 git），删除的文件移到 `data/kb/.trash/`。
 - 目录可用 `RAG_DOCS_DIR` / `RAG_UPLOAD_DIR` / `RAG_PATTERN` 覆盖；改了磁盘上的文件之后，到 `/admin/policies` 点一次「重建索引」即可，**不用重启进程**。
 
+检索效果有评测集，不是凭感觉：
+
+```bash
+.venv/bin/python scripts/eval_rag.py                          # 20 条问题 × 三路配置
+.venv/bin/python scripts/eval_rag.py --md docs/检索评测.md     # 重新生成报告
+```
+
+问题分三档——字面（问句里就带制度原文的词）、口语（员工嘴里的说法）、跨章（答案分两处）。
+当前（本地哈希后端）BM25 与混合的 Hit@3 都是 **85%**，字面档 100%、口语档 50%。
+差的 3 条全部是「问题里的词在制度里根本不存在」：「退掉」对「取消」、「修」对「维修」、
+「占着格子」对「超期未取」。这正好指出了关键词检索的边界，也是配真实 embedding 后该被救回的部分。
+详见 [`docs/检索评测.md`](./docs/检索评测.md)——**报告由脚本生成，改完参数重跑就能看到涨跌**。
+
 ## 数据与合规
 
 - `data/` 下全部为**合成样本**：3 台虚构设备、3 个虚构账号，制度文本为自撰，不对应任何真实企业。
@@ -459,12 +472,14 @@ docs/
   architecture.svg          系统架构：四层职责 + RAG 与审计的插入点
   sequence.svg              一次 AI 预约的 8 步（竖排，可直接贴 PPT）
   er.svg                    13 张表的分组、关键约束与主要关系
+  检索评测.md               20 条问题 × 三路配置的 Recall/MRR，由脚本生成
   manuals/                  设备借用制度（RAG 语料）
 tests/                 6 个测试文件，130 项
 scripts/
   verify.sh            自检入口（找 .venv 的 python，转调 verify.py）
   verify.py            130 项单测 + R01–R08 工具侧核对，输出 PASS/FAIL 表
   stage1_rag_prototype.py   阶段 1 单文件原型（检索核心模块唯一定义处）
+  eval_rag.py          检索评测：20 条问题 × BM25 / 向量 / 融合，出 Hit@1/3 与 MRR
 examples/
   demo.py              端到端演示：七幕跑完一条 AI 预约的完整闭环（临时库，不接模型）
 requirements.txt       锁定版本的运行依赖

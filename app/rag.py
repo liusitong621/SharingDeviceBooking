@@ -359,6 +359,25 @@ async def warmup() -> None:
 # =============================================================================
 
 
+# 降级后端下向量路的融合权重。
+# 等权融合隐含"两路同样可靠"，但本地哈希向量只匹配字面，等于第二遍 BM25，
+# 却分走一半融合分，会把 BM25 找对的结果挤下去。实测（scripts/eval_rag.py，20 题）：
+#   等权     Hit@3 75%（比 BM25 单路低 10 个点）
+#   0.3      Hit@3 80%
+#   0.1      Hit@3 85%，与 BM25 单路持平
+# 取 0.1 不是"调到一个好看的数"，而是让它只够在 BM25 打平时做 tie-break：
+# RRF 单项量级约 1/(60+rank)≈0.016，乘 0.1 后比 BM25 的最小分项小一个数量级，
+# 不足以改变主排序。逻辑上等价于"降级时不融合"，但不必写一条 if 分支。
+# 配了真实 embedding 之后两路才等权——那时向量路才有独立信号。
+HASH_BACKEND_VEC_WEIGHT = 0.1
+
+
+def fusion_weights() -> tuple[float, float]:
+    """按向量后端决定两路权重：(BM25, 向量)。配了真实 embedding 才等权。"""
+    backend = getattr(_kb, "backend_name", "") if _kb is not None else ""
+    return (1.0, HASH_BACKEND_VEC_WEIGHT) if backend == "hash-local" else (1.0, 1.0)
+
+
 async def search(question: str, top_k: int = 3) -> list:
     """混合检索 top_k。未就绪时抛 RuntimeError，由路由层转成 503。"""
     if _kb is None or _stage1 is None:
@@ -370,6 +389,7 @@ async def search(question: str, top_k: int = 3) -> list:
         _kb.vindex,
         _kb.embedder,
         top_k=top_k,
+        weights=fusion_weights(),
     )
 
 

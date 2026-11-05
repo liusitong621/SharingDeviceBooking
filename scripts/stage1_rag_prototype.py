@@ -322,7 +322,7 @@ def load_markdown(path: Path, docs_root: Path, size: int, overlap: int) -> list[
 
 def embed_text(c: Chunk) -> str:
     """
-    索引侧使用的文本 = 叶标题 + 正文。
+    索引侧使用的文本 = 叶标题 ×2 + 正文。
 
     这里要和「喂给模型的文本」严格区分：
       - 索引侧加标题：标题是主题的最强信号，能显著提升召回准确率；
@@ -332,8 +332,17 @@ def embed_text(c: Chunk) -> str:
       完整路径会把文档级前缀（如"共享设备借用"）重复写进每个切片，
       同一个词在所有切片里都出现，IDF 趋近于零，等于白加噪声。
       这是 RAG 调优里最容易忽略、收益又最大的一处细节。
+
+    为什么标题写两遍（字段加权的低成本做法）：
+      BM25 把标题和正文当同一份文本算词频，长切片里的标题就只有一个词的权重。
+      实测（scripts/eval_rag.py 的 Q01「可预约时段是几点到几点」）：
+      298 字的「二、可预约时段」被 167 字的「五、取用与归还」压到第 4 位——
+      因为后者正文里"预约""时段"出现得更密，而标题那一次出现被长度归一化摊薄了。
+      把标题重复一次，等于给它 2 倍字段权重，该题从落榜升到第 3，且其余 19 题无一退步。
+      更正规的做法是 BM25F，为每个字段单独记长度并加权；这里语料只有 9 个切片，
+      用重复近似足够，代价是倒排表略大。
     """
-    return f"{c.title}\n{c.text}"
+    return f"{c.title}\n{c.title}\n{c.text}"
 
 
 def load_corpus(docs_root: Path, size: int, overlap: int, pattern: str = "*.md") -> list[Chunk]:
@@ -360,7 +369,12 @@ def load_corpus(docs_root: Path, size: int, overlap: int, pattern: str = "*.md")
 # =============================================================================
 
 # 极简停用词：只去无信息量的虚词与标点，不做过度过滤（会误伤"不超过"这类关键否定词）
-STOPWORDS = set("的了和是在与及或就都而及其为以于对从把被这那有")
+STOPWORDS = set("的了和是在与及或就都而及其为以于对从把被这那有") | set(
+    # 疑问与语气词。制度正文是陈述句，这些词几乎只出现在用户提问里，
+    # 留在倒排表里只会制造虚假匹配：问"几点到几点"不该因为"点"字命中"到达预约时段后"。
+    # 这是评测出来的——不是凭感觉加词，见 scripts/eval_rag.py 的 Q01。
+    "吗 呢 吧 啊 呀 嘛 哦 啦 几 多少 什么 怎么 怎样 如何 为什么 哪 哪些 哪个".split()
+)
 
 # 纯中文词的正则，用于下面的「字词混合」处理
 CJK_RE = re.compile(r"^[\u4e00-\u9fff]+$")
@@ -667,6 +681,7 @@ async def hybrid_search(
     top_k: int = 3,
     pool: int = 20,
     rrf_k: int = 60,
+    weights: tuple[float, float] = (1.0, 1.0),
 ) -> list[Hit]:
     """
     两路各取 pool 条，再 RRF 融合取 top_k。
@@ -674,6 +689,12 @@ async def hybrid_search(
     pool 的意义：单路召回 20 条是有意的扩大（recall 优先），
     最终 top3 交给 LLM 前才收窄（precision 优先）。
     这个「先粗后精」的两段式，是所有 RAG 系统的标准做法。
+
+    weights = (BM25 权重, 向量权重)，默认等权。
+    为什么需要它：等权融合隐含一个假设——两路同样可靠。这个假设在配了真实 embedding 时成立，
+    在降级为本地哈希向量时不成立：那时向量路只会匹配字面，等于第二遍 BM25，
+    却拿走了融合分的一半，把 BM25 找对的结果挤下去。
+    实测见 scripts/eval_rag.py：等权时混合的 Hit@3 反而低于 BM25 单路。
     """
     # ---- 第 1 路：稀疏（关键词）----
     bm25_hits = bm25.search(tokenize(query), top_k=pool)
@@ -685,11 +706,12 @@ async def hybrid_search(
     vec_rank = {idx: r for r, (idx, _) in enumerate(vec_hits, start=1)}
 
     # ---- RRF 融合 ----
+    w_bm, w_vec = weights
     fused: dict[int, float] = {}
     for idx, r in bm25_rank.items():
-        fused[idx] = fused.get(idx, 0.0) + 1.0 / (rrf_k + r)
+        fused[idx] = fused.get(idx, 0.0) + w_bm / (rrf_k + r)
     for idx, r in vec_rank.items():
-        fused[idx] = fused.get(idx, 0.0) + 1.0 / (rrf_k + r)
+        fused[idx] = fused.get(idx, 0.0) + w_vec / (rrf_k + r)
 
     ranked = sorted(fused.items(), key=lambda kv: kv[1], reverse=True)[:top_k]
     return [
@@ -760,7 +782,9 @@ def corpus_fingerprint(docs_root: Path, s: Settings, pattern: str = "*.md") -> s
         h.update(f.name.encode())
         h.update(str(f.stat().st_size).encode())
         h.update(str(int(f.stat().st_mtime)).encode())
-    h.update(f"v3|{pattern}|{s.chunk_size}|{s.chunk_overlap}|{s.embed_model}|{s.embed_backend}".encode())
+    # v4：embed_text 改为「标题 ×2」。指纹里必须带上这个版本号，
+    # 否则旧缓存的向量还是按「标题 ×1」算的，改了逻辑却读旧索引，等于没改。
+    h.update(f"v4|{pattern}|{s.chunk_size}|{s.chunk_overlap}|{s.embed_model}|{s.embed_backend}".encode())
     return h.hexdigest()[:16]
 
 
@@ -886,7 +910,12 @@ async def answer_once(question: str, kb: KnowledgeBase, s: Settings) -> None:
     """一次完整的问答：检索 -> 拼提示词 -> 调模型 -> 输出。"""
     print(f"\n[问题] {question}")
 
-    hits = await hybrid_search(question, kb.chunks, kb.bm25, kb.vindex, kb.embedder, top_k=s.top_k)
+    # 与线上 app/rag.py::fusion_weights() 同一口径：哈希后端下降权（向量路没有独立信号），
+    # 配了真实 embedding 才等权。命令行验证的排序应当等于 Web 里返回的排序。
+    weights = (1.0, 0.1) if kb.backend_name == "hash-local" else (1.0, 1.0)
+    hits = await hybrid_search(
+        question, kb.chunks, kb.bm25, kb.vindex, kb.embedder, top_k=s.top_k, weights=weights
+    )
     print(f"[检索] top{s.top_k} 召回如下：")
     print_hits(hits)
 
@@ -920,7 +949,10 @@ async def answer_once(question: str, kb: KnowledgeBase, s: Settings) -> None:
 
 async def amain() -> None:
     parser = argparse.ArgumentParser(description="共享设备借用 · 阶段1 RAG 原型")
-    parser.add_argument("--docs", default="docs", help="markdown 目录，默认 docs")
+    # 默认指向 manuals/，与线上 app/rag.py 的 DEFAULT_DOCS_DIR 一致。
+    # 不要默认 docs/：那里还有调研报告、需求追溯、检索评测，它们通篇在讨论"设备/预约/怎么"，
+    # 会把真正的规程挤出 top3（本文件开头的语料说明就警告过这一点，实测也确实如此）。
+    parser.add_argument("--docs", default="docs/manuals", help="markdown 目录，默认 docs/manuals")
     parser.add_argument("--pattern", default="*.md", help="文件匹配模式，如 '一页纸*.md' 可只索引单个文件")
     parser.add_argument("--question", default=None, help="单次提问，不给则进交互模式")
     parser.add_argument("--no-llm", action="store_true", help="只做检索，不调大模型")
