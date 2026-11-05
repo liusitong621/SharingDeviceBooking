@@ -1,0 +1,372 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1660" height="1312" viewBox="0 0 1660 1312">
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8e8a7e"/></marker>
+<marker id="arrowO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a85c0a"/></marker>
+<marker id="arrowN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1f3f66"/></marker>
+<marker id="arrowR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a3342b"/></marker>
+<marker id="arrowG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2b6a4c"/></marker>
+</defs>
+<rect width="1660" height="1312" fill="#f7f6f2"/>
+<text x="60" y="58" font-family="Songti SC, SimSun, Noto Serif CJK SC, serif" font-size="34" font-weight="600" fill="#1b1a17" text-anchor="start" letter-spacing="2">数据模型</text>
+<text x="60" y="86" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="400" fill="#66645c" text-anchor="start" letter-spacing="0">13 张表 · 四组职责 · 两条写进数据库的硬约束（条件唯一索引、只追加日志）</text>
+<rect x="56" y="116" width="496" height="764" rx="4" fill="#fbfaf7" stroke="#d8d4c9" stroke-width="1.2"/>
+<text x="76" y="142" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#41403a" text-anchor="start" letter-spacing="0">① 身份与资产</text>
+<text x="536" y="142" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="10.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">谁、借什么</text>
+<rect x="76" y="152" width="456" height="205" rx="4" fill="#ffffff" stroke="#d8d4c9" stroke-width="1.2"/>
+<path d="M 76 181 L 76 156 Q 76 152 80 152 L 528 152 Q 532 152 532 156 L 532 181 Z" fill="#f1efe9"/>
+<text x="90" y="172" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#1f3f66" text-anchor="start" letter-spacing="0">users</text>
+<text x="518" y="172" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">表</text>
+<rect x="88" y="187" width="22" height="14" rx="2" fill="#e9eff6" stroke="none" stroke-width="1.2"/>
+<text x="99" y="198" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#1f3f66" text-anchor="middle" letter-spacing="0">PK</text>
+<text x="118" y="198" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">id</text>
+<text x="518" y="198" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<rect x="88" y="204" width="22" height="14" rx="2" fill="#eaf3ee" stroke="none" stroke-width="1.2"/>
+<text x="99" y="215" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#2b6a4c" text-anchor="middle" letter-spacing="0">UQ</text>
+<text x="118" y="215" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">emp_no</text>
+<text x="518" y="215" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<circle cx="99" cy="227.5" r="2" fill="#c6c1b4"/>
+<text x="118" y="232" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">name / dept</text>
+<circle cx="99" cy="244.5" r="2" fill="#c6c1b4"/>
+<text x="118" y="249" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">role</text>
+<text x="518" y="249" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">admin | employee</text>
+<circle cx="99" cy="261.5" r="2" fill="#c6c1b4"/>
+<text x="118" y="266" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">status</text>
+<text x="518" y="266" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">active | disabled</text>
+<circle cx="99" cy="278.5" r="2" fill="#c6c1b4"/>
+<text x="118" y="283" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">pwd_hash</text>
+<text x="518" y="283" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">scrypt</text>
+<circle cx="99" cy="295.5" r="2" fill="#c6c1b4"/>
+<text x="118" y="300" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">failed_count / locked_until</text>
+<rect x="86" y="321" width="436" height="24" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="94" y="337" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="400" fill="#7a4a10" text-anchor="start" letter-spacing="0">emp_no 唯一；连错 5 次锁 15 分钟</text>
+<rect x="76" y="387" width="456" height="205" rx="4" fill="#ffffff" stroke="#d8d4c9" stroke-width="1.2"/>
+<path d="M 76 416 L 76 391 Q 76 387 80 387 L 528 387 Q 532 387 532 391 L 532 416 Z" fill="#f1efe9"/>
+<text x="90" y="407" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#1f3f66" text-anchor="start" letter-spacing="0">devices</text>
+<text x="518" y="407" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">表</text>
+<rect x="88" y="422" width="22" height="14" rx="2" fill="#e9eff6" stroke="none" stroke-width="1.2"/>
+<text x="99" y="433" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#1f3f66" text-anchor="middle" letter-spacing="0">PK</text>
+<text x="118" y="433" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">id</text>
+<text x="518" y="433" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<rect x="88" y="439" width="22" height="14" rx="2" fill="#eaf3ee" stroke="none" stroke-width="1.2"/>
+<text x="99" y="450" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#2b6a4c" text-anchor="middle" letter-spacing="0">UQ</text>
+<text x="118" y="450" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">asset_no</text>
+<text x="518" y="450" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<circle cx="99" cy="462.5" r="2" fill="#c6c1b4"/>
+<text x="118" y="467" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">name / model</text>
+<circle cx="99" cy="479.5" r="2" fill="#c6c1b4"/>
+<text x="118" y="484" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">location</text>
+<text x="518" y="484" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<circle cx="99" cy="496.5" r="2" fill="#c6c1b4"/>
+<text x="118" y="501" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">status</text>
+<text x="518" y="501" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">available | offline</text>
+<circle cx="99" cy="513.5" r="2" fill="#c6c1b4"/>
+<text x="118" y="518" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">note</text>
+<text x="518" y="518" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<circle cx="99" cy="530.5" r="2" fill="#c6c1b4"/>
+<text x="118" y="535" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">deleted_at</text>
+<text x="518" y="535" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">软删除</text>
+<rect x="86" y="556" width="436" height="24" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="94" y="572" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="400" fill="#7a4a10" text-anchor="start" letter-spacing="0">下架 = status 改 offline；删除只写 deleted_at</text>
+<rect x="76" y="622" width="456" height="154" rx="4" fill="#ffffff" stroke="#d8d4c9" stroke-width="1.2"/>
+<path d="M 76 651 L 76 626 Q 76 622 80 622 L 528 622 Q 532 622 532 626 L 532 651 Z" fill="#f1efe9"/>
+<text x="90" y="642" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#a3342b" text-anchor="start" letter-spacing="0">audit_flags</text>
+<text x="518" y="642" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">表</text>
+<rect x="88" y="657" width="22" height="14" rx="2" fill="#e9eff6" stroke="none" stroke-width="1.2"/>
+<text x="99" y="668" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#1f3f66" text-anchor="middle" letter-spacing="0">PK</text>
+<text x="118" y="668" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">run_id</text>
+<text x="518" y="668" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">→ agent_runs</text>
+<circle cx="99" cy="680.5" r="2" fill="#c6c1b4"/>
+<text x="118" y="685" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">reason</text>
+<text x="518" y="685" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">人工标记原因</text>
+<rect x="88" y="691" width="22" height="14" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="99" y="702" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#a85c0a" text-anchor="middle" letter-spacing="0">FK</text>
+<text x="118" y="702" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">flagged_by</text>
+<text x="518" y="702" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">→ users</text>
+<circle cx="99" cy="714.5" r="2" fill="#c6c1b4"/>
+<text x="118" y="719" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">flagged_at</text>
+<text x="518" y="719" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<rect x="86" y="740" width="436" height="24" rx="2" fill="#fbeceb" stroke="none" stroke-width="1.2"/>
+<text x="94" y="756" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="400" fill="#a3342b" text-anchor="start" letter-spacing="0">run_id 指向 agent_runs.id；只加一行，不改原始轨迹</text>
+<rect x="596" y="116" width="500" height="764" rx="4" fill="#fbfaf7" stroke="#d8d4c9" stroke-width="1.2"/>
+<text x="616" y="142" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#41403a" text-anchor="start" letter-spacing="0">② 预约、凭证与待确认</text>
+<text x="1076" y="142" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="10.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">冲突判定的战场</text>
+<rect x="616" y="152" width="460" height="222" rx="4" fill="#ffffff" stroke="#d8d4c9" stroke-width="1.2"/>
+<path d="M 616 181 L 616 156 Q 616 152 620 152 L 1072 152 Q 1076 152 1076 156 L 1076 181 Z" fill="#f1efe9"/>
+<text x="630" y="172" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#1f3f66" text-anchor="start" letter-spacing="0">bookings</text>
+<text x="1062" y="172" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">表</text>
+<rect x="628" y="187" width="22" height="14" rx="2" fill="#e9eff6" stroke="none" stroke-width="1.2"/>
+<text x="639" y="198" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#1f3f66" text-anchor="middle" letter-spacing="0">PK</text>
+<text x="658" y="198" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">id</text>
+<text x="1062" y="198" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<rect x="628" y="204" width="22" height="14" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="639" y="215" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#a85c0a" text-anchor="middle" letter-spacing="0">FK</text>
+<text x="658" y="215" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">device_id</text>
+<text x="1062" y="215" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">→ devices</text>
+<rect x="628" y="221" width="22" height="14" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="639" y="232" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#a85c0a" text-anchor="middle" letter-spacing="0">FK</text>
+<text x="658" y="232" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">user_id</text>
+<text x="1062" y="232" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">→ users</text>
+<circle cx="639" cy="244.5" r="2" fill="#c6c1b4"/>
+<text x="658" y="249" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">slot_date</text>
+<text x="1062" y="249" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">YYYY-MM-DD</text>
+<circle cx="639" cy="261.5" r="2" fill="#c6c1b4"/>
+<text x="658" y="266" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">slot_start / slot_end</text>
+<text x="1062" y="266" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">HH:MM</text>
+<circle cx="639" cy="278.5" r="2" fill="#c6c1b4"/>
+<text x="658" y="283" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">status</text>
+<text x="1062" y="283" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">booked | picked | …</text>
+<circle cx="639" cy="295.5" r="2" fill="#c6c1b4"/>
+<text x="658" y="300" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">active_flag</text>
+<text x="1062" y="300" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">占位标记</text>
+<circle cx="639" cy="312.5" r="2" fill="#c6c1b4"/>
+<text x="658" y="317" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">picked_at / returned_at</text>
+<text x="1062" y="317" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<rect x="626" y="338" width="440" height="24" rx="2" fill="#fbeceb" stroke="none" stroke-width="1.2"/>
+<text x="634" y="354" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="400" fill="#a3342b" text-anchor="start" letter-spacing="0">UNIQUE(device_id, slot_date, slot_start) WHERE active_flag IS NOT NULL</text>
+<rect x="616" y="404" width="460" height="205" rx="4" fill="#ffffff" stroke="#d8d4c9" stroke-width="1.2"/>
+<path d="M 616 433 L 616 408 Q 616 404 620 404 L 1072 404 Q 1076 404 1076 408 L 1076 433 Z" fill="#f1efe9"/>
+<text x="630" y="424" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#1f3f66" text-anchor="start" letter-spacing="0">booking_validations</text>
+<text x="1062" y="424" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">表</text>
+<rect x="628" y="439" width="22" height="14" rx="2" fill="#e9eff6" stroke="none" stroke-width="1.2"/>
+<text x="639" y="450" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#1f3f66" text-anchor="middle" letter-spacing="0">PK</text>
+<text x="658" y="450" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">id</text>
+<text x="1062" y="450" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<rect x="628" y="456" width="22" height="14" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="639" y="467" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#a85c0a" text-anchor="middle" letter-spacing="0">FK</text>
+<text x="658" y="467" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">user_id</text>
+<text x="1062" y="467" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">→ users</text>
+<rect x="628" y="473" width="22" height="14" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="639" y="484" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#a85c0a" text-anchor="middle" letter-spacing="0">FK</text>
+<text x="658" y="484" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">device_id</text>
+<text x="1062" y="484" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">→ devices</text>
+<circle cx="639" cy="496.5" r="2" fill="#c6c1b4"/>
+<text x="658" y="501" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">slot_date / slot_starts</text>
+<text x="1062" y="501" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">JSON</text>
+<circle cx="639" cy="513.5" r="2" fill="#c6c1b4"/>
+<text x="658" y="518" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">payload_hash</text>
+<text x="1062" y="518" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">SHA-256</text>
+<circle cx="639" cy="530.5" r="2" fill="#c6c1b4"/>
+<text x="658" y="535" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">expires_at</text>
+<text x="1062" y="535" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">5 分钟</text>
+<circle cx="639" cy="547.5" r="2" fill="#c6c1b4"/>
+<text x="658" y="552" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">consumed_at</text>
+<text x="1062" y="552" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">一次即废</text>
+<rect x="626" y="573" width="440" height="24" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="634" y="589" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="400" fill="#7a4a10" text-anchor="start" letter-spacing="0">凭证绑定签发者：别人拿到 id 也用不了</text>
+<rect x="616" y="639" width="460" height="205" rx="4" fill="#ffffff" stroke="#d8d4c9" stroke-width="1.2"/>
+<path d="M 616 668 L 616 643 Q 616 639 620 639 L 1072 639 Q 1076 639 1076 643 L 1076 668 Z" fill="#f1efe9"/>
+<text x="630" y="659" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#2b6a4c" text-anchor="start" letter-spacing="0">pending_actions</text>
+<text x="1062" y="659" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">表</text>
+<rect x="628" y="674" width="22" height="14" rx="2" fill="#e9eff6" stroke="none" stroke-width="1.2"/>
+<text x="639" y="685" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#1f3f66" text-anchor="middle" letter-spacing="0">PK</text>
+<text x="658" y="685" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">id</text>
+<text x="1062" y="685" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<rect x="628" y="691" width="22" height="14" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="639" y="702" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#a85c0a" text-anchor="middle" letter-spacing="0">FK</text>
+<text x="658" y="702" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">run_id / session_id</text>
+<text x="1062" y="702" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">→ 运行</text>
+<circle cx="639" cy="714.5" r="2" fill="#c6c1b4"/>
+<text x="658" y="719" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">action</text>
+<text x="1062" y="719" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">request | cancel</text>
+<circle cx="639" cy="731.5" r="2" fill="#c6c1b4"/>
+<text x="658" y="736" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">summary_json</text>
+<text x="1062" y="736" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">给人看的摘要</text>
+<circle cx="639" cy="748.5" r="2" fill="#c6c1b4"/>
+<text x="658" y="753" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">status</text>
+<text x="1062" y="753" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">pending | confirmed | …</text>
+<circle cx="639" cy="765.5" r="2" fill="#c6c1b4"/>
+<text x="658" y="770" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">expires_at</text>
+<text x="1062" y="770" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">10 分钟</text>
+<circle cx="639" cy="782.5" r="2" fill="#c6c1b4"/>
+<text x="658" y="787" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">decided_at</text>
+<text x="1062" y="787" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">幂等闸门</text>
+<rect x="626" y="808" width="440" height="24" rx="2" fill="#eaf3ee" stroke="none" stroke-width="1.2"/>
+<text x="634" y="824" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="400" fill="#2b6a4c" text-anchor="start" letter-spacing="0">写意图停在这里；request 带凭证 id，cancel 带订单 id</text>
+<path d="M 532 212 L 566 212 L 566 198 L 610 198" fill="none" stroke="#8e8a7e" stroke-width="1.2" marker-end="url(#arrow)"/>
+<text x="552" y="200" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9" font-weight="400" fill="#66645c" text-anchor="middle" letter-spacing="0">1:N</text>
+<path d="M 532 443 L 578 443 L 578 272 L 610 272" fill="none" stroke="#8e8a7e" stroke-width="1.2" marker-end="url(#arrow)"/>
+<text x="560" y="431" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9" font-weight="400" fill="#66645c" text-anchor="middle" letter-spacing="0">1:N</text>
+<line x1="846" y1="609" x2="846" y2="633" stroke="#8e8a7e" stroke-width="1.2" marker-end="url(#arrow)"/>
+<text x="854" y="629" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9" font-weight="400" fill="#66645c" text-anchor="start" letter-spacing="0">0..1</text>
+<rect x="1136" y="116" width="468" height="764" rx="4" fill="#fbfaf7" stroke="#d8d4c9" stroke-width="1.2"/>
+<text x="1156" y="142" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#41403a" text-anchor="start" letter-spacing="0">③ 对话、运行与轨迹</text>
+<text x="1584" y="142" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="10.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">审计的数据来源</text>
+<rect x="1156" y="152" width="428" height="154" rx="4" fill="#ffffff" stroke="#d8d4c9" stroke-width="1.2"/>
+<path d="M 1156 181 L 1156 156 Q 1156 152 1160 152 L 1580 152 Q 1584 152 1584 156 L 1584 181 Z" fill="#f1efe9"/>
+<text x="1170" y="172" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#1f3f66" text-anchor="start" letter-spacing="0">chat_sessions</text>
+<text x="1570" y="172" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">表</text>
+<rect x="1168" y="187" width="22" height="14" rx="2" fill="#e9eff6" stroke="none" stroke-width="1.2"/>
+<text x="1179" y="198" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#1f3f66" text-anchor="middle" letter-spacing="0">PK</text>
+<text x="1198" y="198" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">id</text>
+<text x="1570" y="198" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<rect x="1168" y="204" width="22" height="14" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="1179" y="215" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#a85c0a" text-anchor="middle" letter-spacing="0">FK</text>
+<text x="1198" y="215" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">user_id</text>
+<text x="1570" y="215" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">→ users</text>
+<circle cx="1179" cy="227.5" r="2" fill="#c6c1b4"/>
+<text x="1198" y="232" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">client_token</text>
+<text x="1570" y="232" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">绑定浏览器</text>
+<circle cx="1179" cy="244.5" r="2" fill="#c6c1b4"/>
+<text x="1198" y="249" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">title / message_count</text>
+<rect x="1166" y="270" width="408" height="24" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="1174" y="286" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="400" fill="#7a4a10" text-anchor="start" letter-spacing="0">会话锁是进程内的，只在单 worker 下有效</text>
+<rect x="1156" y="330" width="428" height="135" rx="4" fill="#ffffff" stroke="#d8d4c9" stroke-width="1.2"/>
+<path d="M 1156 359 L 1156 334 Q 1156 330 1160 330 L 1580 330 Q 1584 330 1584 334 L 1584 359 Z" fill="#f1efe9"/>
+<text x="1170" y="350" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#1f3f66" text-anchor="start" letter-spacing="0">chat_messages</text>
+<text x="1570" y="350" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">表</text>
+<rect x="1168" y="365" width="22" height="14" rx="2" fill="#e9eff6" stroke="none" stroke-width="1.2"/>
+<text x="1179" y="376" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#1f3f66" text-anchor="middle" letter-spacing="0">PK</text>
+<text x="1198" y="376" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">id</text>
+<text x="1570" y="376" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<rect x="1168" y="382" width="22" height="14" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="1179" y="393" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#a85c0a" text-anchor="middle" letter-spacing="0">FK</text>
+<text x="1198" y="393" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">session_id</text>
+<text x="1570" y="393" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">→ sessions</text>
+<circle cx="1179" cy="405.5" r="2" fill="#c6c1b4"/>
+<text x="1198" y="410" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">role</text>
+<text x="1570" y="410" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">user | assistant</text>
+<circle cx="1179" cy="422.5" r="2" fill="#c6c1b4"/>
+<text x="1198" y="427" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">content / citations</text>
+<text x="1570" y="427" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">JSON</text>
+<circle cx="1179" cy="439.5" r="2" fill="#c6c1b4"/>
+<text x="1198" y="444" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">trace_id</text>
+<text x="1570" y="444" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">定位一问一答</text>
+<rect x="1156" y="489" width="428" height="188" rx="4" fill="#ffffff" stroke="#d8d4c9" stroke-width="1.2"/>
+<path d="M 1156 518 L 1156 493 Q 1156 489 1160 489 L 1580 489 Q 1584 489 1584 493 L 1584 518 Z" fill="#f1efe9"/>
+<text x="1170" y="509" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#a85c0a" text-anchor="start" letter-spacing="0">agent_runs</text>
+<text x="1570" y="509" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">表</text>
+<rect x="1168" y="524" width="22" height="14" rx="2" fill="#e9eff6" stroke="none" stroke-width="1.2"/>
+<text x="1179" y="535" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#1f3f66" text-anchor="middle" letter-spacing="0">PK</text>
+<text x="1198" y="535" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">id</text>
+<text x="1570" y="535" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<rect x="1168" y="541" width="22" height="14" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="1179" y="552" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#a85c0a" text-anchor="middle" letter-spacing="0">FK</text>
+<text x="1198" y="552" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">session_id / user_id</text>
+<text x="1570" y="552" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">→ 外键</text>
+<circle cx="1179" cy="564.5" r="2" fill="#c6c1b4"/>
+<text x="1198" y="569" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">question</text>
+<text x="1570" y="569" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">用户原话</text>
+<circle cx="1179" cy="581.5" r="2" fill="#c6c1b4"/>
+<text x="1198" y="586" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">status</text>
+<text x="1570" y="586" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">ok | failed | max_rounds</text>
+<circle cx="1179" cy="598.5" r="2" fill="#c6c1b4"/>
+<text x="1198" y="603" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">rounds / total_ms</text>
+<text x="1570" y="603" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">决策轮数与耗时</text>
+<circle cx="1179" cy="615.5" r="2" fill="#c6c1b4"/>
+<text x="1198" y="620" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">prompt_version</text>
+<text x="1570" y="620" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">哪一版提示词</text>
+<rect x="1166" y="641" width="408" height="24" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="1174" y="657" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="400" fill="#7a4a10" text-anchor="start" letter-spacing="0">一次提问一行；审计页按人或按状态筛的就是它</text>
+<rect x="1156" y="701" width="428" height="152" rx="4" fill="#ffffff" stroke="#d8d4c9" stroke-width="1.2"/>
+<path d="M 1156 730 L 1156 705 Q 1156 701 1160 701 L 1580 701 Q 1584 701 1584 705 L 1584 730 Z" fill="#f1efe9"/>
+<text x="1170" y="721" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#a85c0a" text-anchor="start" letter-spacing="0">agent_steps</text>
+<text x="1570" y="721" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">表</text>
+<rect x="1168" y="736" width="22" height="14" rx="2" fill="#e9eff6" stroke="none" stroke-width="1.2"/>
+<text x="1179" y="747" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#1f3f66" text-anchor="middle" letter-spacing="0">PK</text>
+<text x="1198" y="747" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">id</text>
+<text x="1570" y="747" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<rect x="1168" y="753" width="22" height="14" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="1179" y="764" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#a85c0a" text-anchor="middle" letter-spacing="0">FK</text>
+<text x="1198" y="764" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">run_id</text>
+<text x="1570" y="764" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">→ agent_runs</text>
+<circle cx="1179" cy="776.5" r="2" fill="#c6c1b4"/>
+<text x="1198" y="781" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">round_no / step_no</text>
+<text x="1570" y="781" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">第几轮第几步</text>
+<circle cx="1179" cy="793.5" r="2" fill="#c6c1b4"/>
+<text x="1198" y="798" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">tool_name / args_json</text>
+<text x="1570" y="798" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">调了什么、传了什么</text>
+<circle cx="1179" cy="810.5" r="2" fill="#c6c1b4"/>
+<text x="1198" y="815" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">result_summary</text>
+<text x="1570" y="815" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">回填给模型的内容</text>
+<circle cx="1179" cy="827.5" r="2" fill="#c6c1b4"/>
+<text x="1198" y="832" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">status / elapsed_ms</text>
+<line x1="1370" y1="306" x2="1370" y2="324" stroke="#8e8a7e" stroke-width="1.2" marker-end="url(#arrow)"/>
+<text x="1378" y="320" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9" font-weight="400" fill="#66645c" text-anchor="start" letter-spacing="0">1:N</text>
+<line x1="1370" y1="677" x2="1370" y2="695" stroke="#8e8a7e" stroke-width="1.2" marker-end="url(#arrow)"/>
+<text x="1378" y="691" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9" font-weight="400" fill="#66645c" text-anchor="start" letter-spacing="0">1:N</text>
+<path d="M 1150 529 L 1108 529 L 1108 679 L 1082 679" fill="none" stroke="#2b6a4c" stroke-width="1.4" marker-end="url(#arrowG)"/>
+<text x="1114" y="521" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9" font-weight="400" fill="#2b6a4c" text-anchor="end" letter-spacing="0">1:N</text>
+<text x="60" y="908" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="600" fill="#41403a" text-anchor="start" letter-spacing="0">④ 证据与配置</text>
+<text x="820" y="908" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="10.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">日志只追加；配置按版本追加；语料按文件同步</text>
+<rect x="60" y="920" width="486" height="190" rx="4" fill="#ffffff" stroke="#d8d4c9" stroke-width="1.2"/>
+<path d="M 60 949 L 60 924 Q 60 920 64 920 L 542 920 Q 546 920 546 924 L 546 949 Z" fill="#f1efe9"/>
+<text x="74" y="940" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#a85c0a" text-anchor="start" letter-spacing="0">op_logs</text>
+<text x="532" y="940" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">表</text>
+<rect x="72" y="955" width="22" height="14" rx="2" fill="#e9eff6" stroke="none" stroke-width="1.2"/>
+<text x="83" y="966" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#1f3f66" text-anchor="middle" letter-spacing="0">PK</text>
+<text x="102" y="966" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">id</text>
+<text x="532" y="966" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<circle cx="83" cy="978.5" r="2" fill="#c6c1b4"/>
+<text x="102" y="983" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">actor_id / actor_label</text>
+<text x="532" y="983" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">谁，冗余工号</text>
+<circle cx="83" cy="995.5" r="2" fill="#c6c1b4"/>
+<text x="102" y="1000" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">action</text>
+<text x="532" y="1000" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">booking.create …</text>
+<circle cx="83" cy="1012.5" r="2" fill="#c6c1b4"/>
+<text x="102" y="1017" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">target_type / target_id</text>
+<text x="532" y="1017" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">多态引用</text>
+<circle cx="83" cy="1029.5" r="2" fill="#c6c1b4"/>
+<text x="102" y="1034" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">before_json / after_json</text>
+<text x="532" y="1034" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">改前与改后</text>
+<circle cx="83" cy="1046.5" r="2" fill="#c6c1b4"/>
+<text x="102" y="1051" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">created_at</text>
+<text x="532" y="1051" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<rect x="70" y="1072" width="466" height="24" rx="2" fill="#fbeceb" stroke="none" stroke-width="1.2"/>
+<text x="78" y="1088" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="400" fill="#a3342b" text-anchor="start" letter-spacing="0">没有 UPDATE / DELETE 入口 —— 「不可改」靠不存在这个函数</text>
+<rect x="576" y="920" width="486" height="190" rx="4" fill="#ffffff" stroke="#d8d4c9" stroke-width="1.2"/>
+<path d="M 576 949 L 576 924 Q 576 920 580 920 L 1058 920 Q 1062 920 1062 924 L 1062 949 Z" fill="#f1efe9"/>
+<text x="590" y="940" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#1f3f66" text-anchor="start" letter-spacing="0">prompt_templates</text>
+<text x="1048" y="940" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">表</text>
+<rect x="588" y="955" width="22" height="14" rx="2" fill="#e9eff6" stroke="none" stroke-width="1.2"/>
+<text x="599" y="966" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#1f3f66" text-anchor="middle" letter-spacing="0">PK</text>
+<text x="618" y="966" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">id</text>
+<text x="1048" y="966" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<rect x="588" y="972" width="22" height="14" rx="2" fill="#eaf3ee" stroke="none" stroke-width="1.2"/>
+<text x="599" y="983" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#2b6a4c" text-anchor="middle" letter-spacing="0">UQ</text>
+<text x="618" y="983" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">tpl_key / version</text>
+<text x="1048" y="983" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">按版本追加</text>
+<circle cx="599" cy="995.5" r="2" fill="#c6c1b4"/>
+<text x="618" y="1000" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">content</text>
+<text x="1048" y="1000" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">模板正文</text>
+<circle cx="599" cy="1012.5" r="2" fill="#c6c1b4"/>
+<text x="618" y="1017" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">status</text>
+<text x="1048" y="1017" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">active | archived</text>
+<circle cx="599" cy="1029.5" r="2" fill="#c6c1b4"/>
+<text x="618" y="1034" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">note / created_by</text>
+<text x="1048" y="1034" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">改动说明与作者</text>
+<rect x="586" y="1055" width="466" height="24" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="594" y="1071" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="400" fill="#7a4a10" text-anchor="start" letter-spacing="0">UNIQUE(tpl_key) WHERE status='active'</text>
+<rect x="1092" y="920" width="486" height="190" rx="4" fill="#ffffff" stroke="#d8d4c9" stroke-width="1.2"/>
+<path d="M 1092 949 L 1092 924 Q 1092 920 1096 920 L 1574 920 Q 1578 920 1578 924 L 1578 949 Z" fill="#f1efe9"/>
+<text x="1106" y="940" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="700" fill="#1f3f66" text-anchor="start" letter-spacing="0">kb_documents</text>
+<text x="1564" y="940" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">表</text>
+<rect x="1104" y="955" width="22" height="14" rx="2" fill="#e9eff6" stroke="none" stroke-width="1.2"/>
+<text x="1115" y="966" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="8.5" font-weight="700" fill="#1f3f66" text-anchor="middle" letter-spacing="0">PK</text>
+<text x="1134" y="966" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">doc_key</text>
+<text x="1564" y="966" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">TEXT</text>
+<circle cx="1115" cy="978.5" r="2" fill="#c6c1b4"/>
+<text x="1134" y="983" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">display_name / origin</text>
+<circle cx="1115" cy="995.5" r="2" fill="#c6c1b4"/>
+<text x="1134" y="1000" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">status / on_disk</text>
+<text x="1564" y="1000" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">分两列，不互相覆盖</text>
+<circle cx="1115" cy="1012.5" r="2" fill="#c6c1b4"/>
+<text x="1134" y="1017" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">sha256 / chunks</text>
+<text x="1564" y="1017" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="400" fill="#66645c" text-anchor="end" letter-spacing="0">内容指纹与切片数</text>
+<circle cx="1115" cy="1029.5" r="2" fill="#c6c1b4"/>
+<text x="1134" y="1034" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#1b1a17" text-anchor="start" letter-spacing="0">file_mtime / synced_at</text>
+<rect x="1102" y="1055" width="466" height="24" rx="2" fill="#fdf2e2" stroke="none" stroke-width="1.2"/>
+<text x="1110" y="1071" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="400" fill="#7a4a10" text-anchor="start" letter-spacing="0">磁盘没了 ≠ 管理员停用：两个字段各说各的</text>
+<rect x="60" y="1130" width="1518" height="72" rx="4" fill="#f1efe8" stroke="#d8d4c9" stroke-width="1.2"/>
+<text x="80" y="1152" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="10" font-weight="600" fill="#41403a" text-anchor="start" letter-spacing="0.5">读这张图的四件事</text>
+<text x="80" y="1174" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="600" fill="#1f3f66" text-anchor="start" letter-spacing="0">红：唯一的并发答案</text>
+<text x="80" y="1190" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.0" font-weight="400" fill="#66645c" text-anchor="start" letter-spacing="0">条件唯一索引；没有"先查再写"的空窗</text>
+<text x="454" y="1174" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="600" fill="#1f3f66" text-anchor="start" letter-spacing="0">绿：写意图与执行分离</text>
+<text x="454" y="1190" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.0" font-weight="400" fill="#66645c" text-anchor="start" letter-spacing="0">pending_actions 承接，人点了才落库</text>
+<text x="828" y="1174" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="600" fill="#1f3f66" text-anchor="start" letter-spacing="0">橙：日志是推导出来的</text>
+<text x="828" y="1190" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.0" font-weight="400" fill="#66645c" text-anchor="start" letter-spacing="0">无外键，靠 target_type 指回，删不掉</text>
+<text x="1202" y="1174" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.4" font-weight="600" fill="#1f3f66" text-anchor="start" letter-spacing="0">蓝：外键只标主要几条</text>
+<text x="1202" y="1190" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="9.0" font-weight="400" fill="#66645c" text-anchor="start" letter-spacing="0">其余关系在字段名里写明，画全会糊成网</text>
+<text x="60" y="1244" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="10.3" font-weight="400" fill="#41403a" text-anchor="start" letter-spacing="0">状态机（bookings.status）：booked → picked → returned；booked / picked → cancelled；booked → expired（过期未取，由常驻扫描写入）。</text>
+<text x="60" y="1266" font-family="PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif" font-size="10.3" font-weight="400" fill="#66645c" text-anchor="start" letter-spacing="0">active_flag 只有两态：非空表示占位，NULL 表示已释放。取消、过期、归还都必须清它 —— 漏清会让格子显示空闲却永远约不上。</text>
+<text x="60" y="1288" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.4" font-weight="400" fill="#8b877d" text-anchor="start" letter-spacing="0">对应代码：app/db.py 的 SCHEMA 与 _migrate()；改表时字段注释与索引定义两处一起看。</text>
+</svg>

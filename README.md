@@ -98,6 +98,21 @@ python -m venv .venv
 >
 > 或者直接跑 `test_sse_interrupt_frames` —— 它用脚本化假模型跑通了同一条链路，不花钱。
 
+## 系统结构
+
+![系统架构](docs/architecture.svg)
+
+<sub>图是矢量的，点开看原图更清楚；PPT 里可直接用，放大不失真。</sub>
+
+四层职责可以对着图直接讲：
+
+- **路由层**只做协议转换，不含业务判定；
+- **业务层**是唯一的判定处 —— REST 与工具层都只能调它，另写一条"模型专用"的下单路径，两边的校验迟早会分叉；
+- **智能体层**负责决策，但写操作一律在 `confirm.py` 前停下，等人在 REST 上点确认；
+- **存储层**用一条条件唯一索引兜住并发，用只追加的 `op_logs` 记录轨迹。
+
+RAG 不算一层：它是被 `search_policy` 调用的工具依赖，所以画在下方并用文字标注调用关系，避免误读成"请求必经检索"。
+
 ## 需求覆盖（R01–R08）
 
 对照 [`docs/一页纸需求清单-MVP-v1.md`](./docs/一页纸需求清单-MVP-v1.md) 的验收口径。
@@ -140,6 +155,8 @@ python -m venv .venv
                           ↓
                     place_booking（唯一索引兜底）→ 写 op_logs
 ```
+
+![一次 AI 预约的完整链路](docs/sequence.svg)
 
 **关键设计**：中断之后，执行确认的必须是 REST 路径，**永远不回模型**。这一条决定了后面"为什么自研 harness"的取舍。
 
@@ -257,6 +274,33 @@ CREATE UNIQUE INDEX uq_booking_slot ON bookings(device_id, slot_date, slot_start
 **写意图单独一块**，因为它才是审计的核心问题。`agent_steps` 只能说明"模型想写"，`pending_actions.status` 才能说明"最后写成了没有"——`confirmed` 才算落地，`rejected` / `expired` / `failed` 都是没落地。
 
 **标记是人的批注，不是数据修改**。`audit_flags` 单独一张表，主键是 `run_id`：`agent_runs` 是机器产生的事实，写进去就不该再改；标记会改、会撤、会换理由。混在一张表里，以后就没法回答"这行到底哪些是当时的原始数据"。撤销标记同样进 `op_logs`（`audit.unflag`）——"谁把标记去掉了"值得追问。
+
+## 数据模型
+
+![数据模型](docs/er.svg)
+
+需求清单的原话是"**4 张表，不许多**"（`users` / `devices` / `bookings` / `op_logs`），最后落了 **13 张**。
+多出来的九张不是膨胀——每一张都能指到一条具体约束：
+
+| 新增的表 | 哪条约束逼出来的 |
+|---|---|
+| `booking_validations` | 模型不能自己下单 → 它必须先拿一张一次性凭证 |
+| `pending_actions` | 写操作必须等人确认 → 意图要有地方停、要能幂等 |
+| `agent_runs` | AI 的行为要能被复查 → 每次提问一行，记轮数与耗时 |
+| `agent_steps` | 只记"跑过"不够 → 每次工具调用的参数与回填都要留 |
+| `audit_flags` | 标记会改、会撤、会换理由，不能和机器事实混在一张表 |
+| `chat_sessions` | 对话要能按人检索（审计要求），且要绑定浏览器 |
+| `chat_messages` | 回答与引用要能回看，`trace_id` 用来定位一问一答 |
+| `prompt_templates` | 改提示词不能靠改代码重启 → 按版本追加 + 部分唯一索引 |
+| `kb_documents` | 制度文件要能停用、能重建索引 → 记录切片状态与磁盘同步 |
+
+`op_logs` 是原始四张之一，但形态变了：`actor_label` 冗余存工号（人删了日志仍然可读），
+`before` / `after` 改成 JSON（不同对象的字段不一样，开列会开不完）。
+
+两条约束写进了数据库而不是应用层：
+
+1. **`bookings` 上带条件的唯一索引** —— `UNIQUE(device_id, slot_date, slot_start) WHERE active_flag IS NOT NULL`。两个人同时抢同一格，数据库只放行一个；代码里不存在"先查再写"的空窗。
+2. **`op_logs` 没有 UPDATE / DELETE 入口** —— "日志不可改"靠"没有这个函数"保证，不靠权限判断。
 
 ## 核心接口
 
@@ -385,6 +429,9 @@ static/                聊天界面（index.html + app.js）、后台样式 admi
 docs/
   一页纸需求清单-MVP-v1.md   R01–R08 与验收口径（需求基线）
   需求追溯.md               每条需求的实现位置、测试、证据与未完成项
+  architecture.svg          系统架构：四层职责 + RAG 与审计的插入点
+  sequence.svg              一次 AI 预约的 8 步（竖排，可直接贴 PPT）
+  er.svg                    13 张表的分组、关键约束与主要关系
   manuals/                  设备借用制度（RAG 语料）
 tests/                 6 个测试文件，130 项
 scripts/
