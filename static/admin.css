@@ -208,6 +208,24 @@ a:hover { text-decoration: underline; text-decoration-thickness: 1px; }
 
 .nav .sep { height: 1px; background: var(--line-2); margin: 10px 6px; }
 
+/* 员工端出口。做成一个方框而不是第九个导航项：它是"换一套界面"，
+   不是后台里的又一个页面。 */
+.side-switch {
+  margin: 14px 2px 0;
+  padding: 11px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+.side-switch a { display: block; font-size: 12.5px; color: var(--brand); }
+.side-switch small {
+  display: block;
+  margin-top: 3px;
+  color: var(--faint);
+  font-size: 10.5px;
+  letter-spacing: .02em;
+}
+
 /* ---------------------------------------------------------------- 侧栏脚 */
 .side-foot { margin-top: auto; border-top: 1px solid var(--line-2); padding: 12px 6px 0; }
 .me { font-size: 12.5px; font-weight: 600; color: var(--ink); line-height: 1.5; }
@@ -1090,9 +1108,15 @@ input[type="file"]::file-selector-button:hover {
   .card-bd { padding: 14px; }
   .card { overflow-x: auto; }   /* 列多的表横向滚动，而不是被裁掉 */
   .card-hd { position: sticky; left: 0; }
-  /* 七列以上的表（审计、台账、知识库）在手机上必须保底宽度，
-     否则浏览器会把每列压到 50px，正文被拆成一字一行 */
-  table:has(thead th:nth-child(7)) { min-width: 700px; }
+  /* 表格在手机上必须保底宽度，否则浏览器会把每列压到 50px，
+     正文被拆成一字一行（「手持频谱分析仪」竖着排就是这个原因）。
+     按列数分级：四列以上 600，七列以上 760。
+     两列表（概览页的账号概况）不设，它在本屏本来就放得下。 */
+  table:has(thead th:nth-child(4)) { min-width: 640px; }
+  /* 五列是「我的预约」：日期 112 + 时段 130 + 状态 92 + 操作 190 已经吃掉 524px，
+     留 76px 给设备名会把「手持频谱分析仪」拆成三行，必须再宽一档 */
+  table:has(thead th:nth-child(5)) { min-width: 720px; }
+  table:has(thead th:nth-child(7)) { min-width: 820px; }
   th, td { padding: 10px 12px; }
   /* 触摸目标在移动端放大到 44px */
   .btn { min-height: 40px; }

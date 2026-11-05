@@ -76,25 +76,8 @@ a:hover { text-decoration: underline; text-decoration-thickness: 1px; }
 
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 2px; }
 
-.app {
-  display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
-  height: 100vh;
-}
-
-/* ---------------------------------------------------------------- 侧栏 */
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 22px 16px 18px;
-  border-right: 1px solid var(--line);
-  min-height: 0;
-}
-
-.brand { display: flex; align-items: center; gap: 10px; padding-bottom: 6px; }
-
-/* 印章方块：与后台同一套语言 */
+/* ---------------------------------------------------------------- 品牌方块 */
+/* 印章式方框，两端共用：后台侧栏、员工端顶部条。 */
 .logo {
   width: 30px; height: 30px;
   flex: none;
@@ -108,34 +91,37 @@ a:hover { text-decoration: underline; text-decoration-thickness: 1px; }
   line-height: 1;
 }
 
-.brand-text { display: flex; flex-direction: column; line-height: 1.4; min-width: 0; }
-.brand-text strong {
-  font-family: var(--font-serif);
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: .04em;
-}
-.brand-text small {
-  color: var(--faint);
-  font-size: 10px;
-  letter-spacing: .18em;
-  text-transform: uppercase;
-}
+/* ---------------------------------------------------------------- 页头工具 */
+/* 「知识库 / 模型」原来竖排在侧栏底部，侧栏取消后压成一行放进标题栏右侧。
+   它不是给人做决策用的，是"系统现在是活的"的证据，所以字号要小、能扫到就行。 */
+.topbar-tools { display: flex; align-items: center; gap: 14px; flex: none; }
 
+.kb-line {
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+.kb-line b { font-weight: 500; color: var(--ink-2); font-family: var(--font-mono); font-size: 10.5px; }
+.kb-line b.ok { color: var(--ok); }
+.kb-line b.warn { color: var(--warn); }
+.kb-line .dot { margin: 0 6px; color: var(--line); }
+
+/* 新建对话：原来占满侧栏宽度，现在是一个紧凑的次要按钮。
+   主操作永远是"发送"，这个按钮不该比它重。 */
 .btn-new {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  min-height: 34px;
-  padding: 7px 12px;
+  gap: 5px;
+  min-height: 30px;
+  padding: 5px 11px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 2px;
   color: var(--ink-2);
-  font: 500 13px/1.4 var(--font-sans);
+  font: 500 12.5px/1.4 var(--font-sans);
   letter-spacing: .02em;
+  white-space: nowrap;
   cursor: pointer;
   transition: border-color 140ms ease-out, background 140ms ease-out, color 140ms ease-out;
 }
@@ -143,62 +129,13 @@ a:hover { text-decoration: underline; text-decoration-thickness: 1px; }
 .btn-new:active { transform: translateY(.5px); }
 .btn-new span { color: var(--brand); font-weight: 600; }
 
-/* 运行状态：两条像文件里的附注，不加边框不加底 */
-.side-info {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 10px 2px;
-  border-top: 1px solid var(--line-2);
-  border-bottom: 1px solid var(--line-2);
-  font-size: 11.5px;
-}
-.side-info .row { display: flex; justify-content: space-between; gap: 8px; }
-.side-info .row span { color: var(--muted); letter-spacing: .04em; }
-.side-info .row b { font-weight: 500; color: var(--ink-2); text-align: right; font-family: var(--font-mono); font-size: 11px; }
-.side-info .row b.ok { color: var(--ok); }
-.side-info .row b.warn { color: var(--warn); }
-
-/* 当前登录者。用户最先想知道的是"我以谁的身份在问"。 */
-.side-user { padding: 2px 2px 0; }
-.side-user .su-name { color: var(--ink); font-size: 13px; font-weight: 600; }
-.side-user .su-sub { margin-top: 1px; color: var(--faint); font-size: 10.5px; letter-spacing: .04em; }
-.side-user .su-links {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  flex-wrap: wrap;
-  margin-top: 9px;
-  padding-top: 9px;
-  border-top: 1px solid var(--line-2);
-  font-size: 11.5px;
-}
-.side-user .su-links a { color: var(--brand); }
-.side-user .su-out {
-  margin-left: auto;
-  padding: 2px 0;
-  background: none; border: 0;
-  color: var(--muted);
-  font: 400 11.5px/1 var(--font-sans);
-  cursor: pointer;
-}
-.side-user .su-out:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
-
-.side-foot {
-  margin-top: auto;
-  color: var(--faint);
-  font-size: 10.5px;
-  line-height: 1.9;
-  letter-spacing: .02em;
-}
-
 /* ---------------------------------------------------------------- 主区 */
 .main {
   display: flex;
   flex-direction: column;
+  flex: 1;              /* 原来写死 100vh；现在高度由 u-body 的 flex 列分配 */
   min-width: 0;
   min-height: 0;
-  height: 100vh;
 }
 
 .topbar {
@@ -623,26 +560,12 @@ a:hover { text-decoration: underline; text-decoration-thickness: 1px; }
 
 /* ---------------------------------------------------------------- 移动端 */
 @media (max-width: 880px) {
-  .app { grid-template-columns: 1fr; height: auto; min-height: 100vh; }
-  .sidebar {
-    flex-direction: row;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
-    padding: 12px 16px;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .brand-text small, .side-info, .side-foot { display: none; }
-  .btn-new { width: auto; margin-left: auto; }
-  .side-user { width: 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .side-user .su-links { margin: 0; padding: 0; border: 0; }
-  .side-user .su-out { margin-left: 0; }
-
-  .main { height: auto; min-height: calc(100vh - 120px); }
   .topbar { padding: 12px 16px; }
+  /* 副标题换行后会把标题顶成两行，而示例问题里已经写明能问什么 */
+  .topbar p { display: none; }
+  .kb-line { display: none; }   /* 状态不是决策信息，优先给标题让位 */
   .messages { padding: 20px 16px 8px; gap: 20px; }
-  .composer { padding: 10px 16px 14px; position: sticky; bottom: 0; }
+  .composer { padding: 10px 16px 14px; }
   .empty h2 { font-size: 25px; }
   .send { min-height: 40px; }
 }

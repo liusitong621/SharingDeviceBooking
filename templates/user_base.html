@@ -1,0 +1,62 @@
+{# 员工端布局：顶部品牌条 + 横向三 tab（问答 / 空档 / 我的）。
+   与后台（base.html）刻意分叉：后台是桌面控制台，左侧编号目录、一次看全；
+   员工端是移动优先的应用，只有三个动作，导航必须在拇指和视线都够得到的地方。
+   两端共用同一套认证、同一套令牌、同一批组件，只有壳不同。 #}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f2ed">
+  <title>{% block title %}设备借用{% endblock %} · 设备借用</title>
+  <link rel="stylesheet" href="/static/admin.css">
+  <link rel="stylesheet" href="/static/user.css">
+</head>
+<body class="u-body">
+<a class="skip" href="#main">跳到主要内容</a>
+
+<header class="u-top">
+  <div class="u-brand">
+    <div class="logo" aria-hidden="true">借</div>
+    <div class="u-brand-text">
+      <strong>设备借用</strong>
+      <small>员工端</small>
+    </div>
+  </div>
+
+  <div class="u-top-right">
+    {% if user.role == 'admin' %}
+    <a class="u-link" href="/admin">管理端 →</a>
+    {% endif %}
+    <div class="u-who">
+      <span>{{ user.name }}</span>
+      <small>{{ user.emp_no }}{% if user.dept %} · {{ user.dept }}{% endif %}</small>
+    </div>
+    <form method="post" action="/logout">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <button type="submit" class="u-out">退出</button>
+    </form>
+  </div>
+</header>
+
+{# 导航条贴在顶部条下面（sticky），长列表滚动时三格入口不会跟着滚走。
+   当前页用下边框而不是实底：员工端整屏只允许一个强调色块（主按钮），
+   导航抢走它，页面重点就散了。 #}
+<nav class="u-tab" aria-label="员工端导航">
+  <div class="u-tab-inner">
+    <a href="/" class="{% if current_path == '/' %}on{% endif %}"
+       {% if current_path == '/' %}aria-current="page"{% endif %}>制度问答</a>
+    <a href="/devices" class="{% if current_path == '/devices' %}on{% endif %}"
+       {% if current_path == '/devices' %}aria-current="page"{% endif %}>设备空档</a>
+    <a href="/bookings" class="{% if current_path == '/bookings' %}on{% endif %}"
+       {% if current_path == '/bookings' %}aria-current="page"{% endif %}>我的预约</a>
+  </div>
+</nav>
+
+<main class="u-main" id="main">
+  <h1 class="u-h1">{% block heading %}{% endblock %}</h1>
+  <p class="u-sub">{% block subheading %}{% endblock %}</p>
+  {% block body %}{% endblock %}
+</main>
+</body>
+</html>

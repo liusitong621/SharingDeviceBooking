@@ -34,11 +34,15 @@
       <a href="/admin/policies" {% if current_path.startswith('/admin/policies') %}class="on" aria-current="page"{% endif %}><span class="n">06</span>制度知识库</a>
       <a href="/admin/prompts" {% if current_path.startswith('/admin/prompts') %}class="on" aria-current="page"{% endif %}><span class="n">07</span>提示词模板</a>
       <a href="/admin/audit" {% if current_path.startswith('/admin/audit') %}class="on" aria-current="page"{% endif %}><span class="n">08</span>对话审计</a>
-      <div class="sep" role="presentation"></div>
-      <a href="/"><span class="n">09</span>问答助手</a>
-      <a href="/devices" {% if current_path == '/devices' %}class="on" aria-current="page"{% endif %}><span class="n">10</span>设备空档</a>
-      <a href="/bookings" {% if current_path == '/bookings' %}class="on" aria-current="page"{% endif %}><span class="n">11</span>我的预约</a>
     </nav>
+
+    {# 管理端不再混排员工端页面。员工端是另一套壳（顶部条 + 三 tab），
+       混在后台目录里会让人误以为它们是"后台的第九、十个模块"。
+       这里只留一个明确的出口。 #}
+    <div class="side-switch">
+      <a href="/">切换到员工端 ↗</a>
+      <small>制度问答 · 设备空档 · 我的预约</small>
+    </div>
 
     <div class="side-foot">
       <div class="me">

@@ -359,6 +359,32 @@ CREATE UNIQUE INDEX uq_booking_slot ON bookings(device_id, slot_date, slot_start
 - 入场只做一次编排（标题 → 指标 → 卡片，间隔 70ms），只在 `prefers-reduced-motion: no-preference` 下生效。
 - 断点 820 / 560px：侧栏转顶部横向目录（右侧淡出提示可滑），指标两列，表格在卡片内横向滚动。
 
+## 双端分离
+
+员工端和管理端是两套壳，不是一套导航里混排。原因很实际：员工只有三个动作，
+管理员要管六类对象。把「制度问答 / 设备空档 / 我的预约」塞进后台编号目录里，
+会让人误以为它们是后台的第九、十个模块。
+
+| | 员工端 | 管理端 |
+|---|---|---|
+| 入口 | `/` `/devices` `/bookings` | `/admin/**` |
+| 布局 | 顶部品牌条 + 横向三 tab | 左侧编号目录 01–08 |
+| 宽度 | 版心 900px，移动优先 | 满宽控制台 |
+| 模板 | `templates/user_base.html` | `templates/base.html` |
+| 样式 | `static/user.css`（只管壳） | `static/admin.css` |
+
+三件事保证它不是"只换了张皮"：
+
+1. **权限只有一套。** `/admin/**` 全部过 `require_admin`，员工手输 URL 得到的是 403 页面，
+   不是"菜单藏起来"。登录后按角色分流：管理员进 `/admin`，员工进 `/`。
+2. **组件只有一套。** `user.css` 只有顶部条、导航条、内容容器和一个跳转链接；
+   卡片、按钮、表格、徽章、状态色全部来自 `admin.css`。两端是同一个产品的两种用法。
+3. **两个出口互相可达。** 管理端目录下方有「切换到员工端」，员工端顶部条对管理员
+   显示「管理端 →」——管理员要能看见员工看到的东西，否则后台指标就是纸面数字。
+
+`static/index.html` 是原生 JS 页面（SSE 流式回答），不走 Jinja，所以它的壳是手写的
+同一套类名。注意那个文件里只能用 HTML 注释：`{# #}` 不过模板引擎，会被原样打到页面上。
+
 ## 目录
 
 ```
@@ -381,8 +407,8 @@ app/
   seed.py              首次启动的种子账号与设备
   sse.py / llm.py
   rag.py               检索装配层：两路语料合并、可热重建的索引单例、上传清洗
-templates/             后台与登录页模板
-static/                聊天界面 + 后台样式
+templates/             管理端 base.html + 员工端 user_base.html + 各页面模板
+static/                聊天界面（index.html + app.js）、后台样式 admin.css、员工端壳 user.css
 requirements.txt       锁定版本的运行依赖
 tests/test_slots.py    时段规则单测
 tests/test_harness.py  执行循环、中断、确认、SSE 接线（用脚本化假模型）

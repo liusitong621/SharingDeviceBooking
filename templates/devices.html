@@ -1,11 +1,7 @@
-{% extends "base.html" %}
+{% extends "user_base.html" %}
 {% block title %}设备空档{% endblock %}
 {% block heading %}设备空档{% endblock %}
 {% block subheading %}{{ date }} · 点空格即可预约，点完立刻生效{% endblock %}
-
-{% block actions %}
-<a class="btn" href="/bookings">我的预约</a>
-{% endblock %}
 
 {% block body %}
 {% if error %}
