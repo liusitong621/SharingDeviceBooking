@@ -33,6 +33,16 @@ def _today() -> str:
     return booking_service.now().date().isoformat()
 
 
+def _ip(request: Request) -> str | None:
+    """
+    客户端 IP，只用于写操作留痕。
+
+    不信任 X-Forwarded-For：单机内网直连时它是客户端编的，取它等于让人自己填
+    "我是谁"。真要放 Nginx 后面，应该在 Nginx 上覆盖这个头，那时再改这里。
+    """
+    return request.client.host if request.client else None
+
+
 # =============================================================================
 # 查询
 # =============================================================================
@@ -45,7 +55,9 @@ async def list_devices(date: str | None = None, user: dict = Depends(current_use
     ok, reason = slot_rules.check_date(day, booking_service.now())
     if not ok:
         raise ApiError("DATE_OUT_OF_RANGE", reason, message=reason)
-    return await booking_service.list_devices_with_availability(day)
+    # 传 user["id"] 让占用视图能标出"我的"（R02）。管理员台账页传 None，
+    # 因为那里看的是资产状态，不是"我约了哪格"。
+    return await booking_service.list_devices_with_availability(day, user["id"])
 
 
 @router.get("/devices/{device_id}/slots")
@@ -54,7 +66,7 @@ async def device_slots(device_id: str, date: str | None = None, user: dict = Dep
     day = date or _today()
     if slot_rules.parse_date(day) is None:
         raise ApiError("DATE_OUT_OF_RANGE", "日期格式应为 YYYY-MM-DD", message="日期格式不正确")
-    return await booking_service.device_slots(device_id, day)
+    return await booking_service.device_slots(device_id, day, user["id"])
 
 
 @router.get("/bookings/mine")
@@ -100,27 +112,43 @@ async def create_booking(request: Request, user: dict = Depends(current_user)) -
 
     remark = body.get("remark")
     result = await booking_service.place_booking(
-        user["id"], device_id, slot_date, starts, remark if isinstance(remark, str) else None
+        user["id"], device_id, slot_date, starts,
+        remark if isinstance(remark, str) else None,
+        actor=user, ip=_ip(request),
     )
     logger.info("用户 %s 预约成功：%s %s", user["emp_no"], slot_date, starts)
     return result
 
 
 @router.post("/bookings/{booking_id}/cancel")
-async def cancel_booking(booking_id: str, user: dict = Depends(current_user)) -> dict:
-    return await booking_service.cancel(user, booking_id)
+async def cancel_booking(booking_id: str, request: Request, user: dict = Depends(current_user)) -> dict:
+    return await booking_service.cancel(user, booking_id, ip=_ip(request))
 
 
 @router.post("/bookings/{booking_id}/pickup")
-async def pickup_booking(booking_id: str, user: dict = Depends(current_user)) -> dict:
+async def pickup_booking(booking_id: str, request: Request, user: dict = Depends(current_user)) -> dict:
     """登记取走。**刻意不暴露给智能体工具层**：人不在现场却点"已取走"，会污染资产轨迹。"""
-    return await booking_service.pickup(user, booking_id)
+    return await booking_service.pickup(user, booking_id, ip=_ip(request))
 
 
 @router.post("/bookings/{booking_id}/return")
-async def return_booking(booking_id: str, user: dict = Depends(current_user)) -> dict:
-    """登记归还。同样只允许 UI 触发。"""
-    return await booking_service.give_back(user, booking_id)
+async def return_booking(booking_id: str, request: Request, user: dict = Depends(current_user)) -> dict:
+    """登记归还。同样只允许 UI 触发。请求体可选 {"remark": "...", "returned_at": "2026-11-05T15:40"}。"""
+    body: dict = {}
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001 - 空 body 是合法的（只点一下"已归还"）
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    remark = body.get("remark")
+    returned_at = body.get("returned_at")
+    return await booking_service.give_back(
+        user, booking_id,
+        remark if isinstance(remark, str) else None,
+        returned_at if isinstance(returned_at, str) else None,
+        ip=_ip(request),
+    )
 
 
 # =============================================================================
@@ -141,7 +169,7 @@ async def set_device_status(device_id: str, request: Request, user: dict = Depen
     device = await db.fetch_device(device_id)
     if device is None:
         raise ApiError("DEVICE_NOT_FOUND")
-    await db.set_device_status(device_id, status)
+    await db.set_device_status(device_id, status, actor=user, ip=_ip(request))
     logger.info("管理员 %s 将设备 %s 置为 %s", user["emp_no"], device["asset_no"], status)
     return {"id": device_id, "status": status}
 

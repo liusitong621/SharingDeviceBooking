@@ -98,7 +98,8 @@ CREATE TABLE IF NOT EXISTS devices (
     status     TEXT NOT NULL DEFAULT 'available'
                CHECK(status IN ('available','borrowed','offline')),
     note       TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    deleted_at TEXT                           -- 软删除标记，见下方 delete_device 的说明
 );
 
 -- ===========================================================================
@@ -231,12 +232,184 @@ CREATE TABLE IF NOT EXISTS pending_actions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pending_session ON pending_actions(session_id, status);
+
+-- ===========================================================================
+-- 操作留痕（R07）
+-- ---------------------------------------------------------------------------
+-- 这张表与 agent_steps 的分工必须说清楚，否则一定会有人问"为什么不合并"：
+--   agent_steps = 模型做了什么（决策轨迹，供调优）
+--   op_logs     = 人对系统做了什么（业务留痕，供追责）
+-- 前者可以丢，后者不能丢——出了"谁把张伟的预约取消了"这种争议时，
+-- 唯一能回答的只有这一张表。
+--
+-- 三个刻意的字段设计：
+--   1) actor_label 冗余存工号，不只存 actor_id。用户被停用、改名、甚至删除后，
+--      日志仍要能读出"当时是谁"。外键在这里是负担而不是保障。
+--   2) before_json/after_json 存**变更前后整行快照**，不存"改了哪个字段"。
+--      因为字段列表会随版本演进，而快照永远能还原当时的事实。
+--   3) 没有任何 UPDATE/DELETE 入口。代码里只提供写入与查询，
+--      "日志不可被普通管理员删除"这条要求靠"没有这个函数"来保证，
+--      比靠权限判断更可靠——权限判断会写错，不存在的函数不会。
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS op_logs (
+    id          TEXT PRIMARY KEY,
+    actor_id    TEXT,                          -- 操作人 id；系统任务为 NULL
+    actor_label TEXT NOT NULL,                 -- 冗余快照：工号，或 system:xxx
+    action      TEXT NOT NULL,                 -- booking.create / device.status ...
+    target_type TEXT NOT NULL,                 -- booking / device / user
+    target_id   TEXT NOT NULL,
+    before_json TEXT,
+    after_json  TEXT,
+    ip          TEXT,
+    created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_oplog_target ON op_logs(target_type, target_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_oplog_actor ON op_logs(actor_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_oplog_time ON op_logs(created_at);
 """
 
 
 def _now() -> str:
     """本地时区 ISO8601（带偏移）。单机内网场景不存 UTC，与 MVP 决策一致。"""
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+# =============================================================================
+# 操作留痕（R07）
+# -----------------------------------------------------------------------------
+# 为什么 `_log` 收的是 conn 而不是自己开连接：
+#   审计的可信度完全取决于"业务变更与日志在**同一个事务**里"。
+#   如果先改状态再另开连接写日志，两个事务之间进程崩了，库里就会出现
+#   "预约没了、日志也没有"的黑洞——而这种黑洞恰恰出现在最需要日志的时候。
+#   传 conn 进来，日志与变更要么一起提交，要么一起回滚。
+#
+# 为什么日志失败不吞异常：
+#   这是少数几个**必须**让业务失败的地方。日志写不进去，就等于这个操作
+#   将来无法被解释，宁可让用户重试，也不能留下一条无据可查的变更。
+# =============================================================================
+
+
+def _log(
+    conn: sqlite3.Connection,
+    *,
+    actor: dict[str, Any] | None,
+    action: str,
+    target_type: str,
+    target_id: str,
+    before: dict[str, Any] | None = None,
+    after: dict[str, Any] | None = None,
+    ip: str | None = None,
+    actor_label: str | None = None,
+) -> None:
+    """
+    在**调用方的事务内**写一条操作日志。
+
+    actor 为 None 表示系统动作（过期扫描、批量迁移）。
+    这类记录不写成"无人操作"，而是明确标 system:xxx——
+    把系统行为伪装成"没人做的事"，是审计里最糟糕的一种含糊。
+    """
+    if actor is not None:
+        label = str(actor.get("emp_no") or actor.get("id") or "unknown")
+        actor_id = actor.get("id")
+    else:
+        label = actor_label or "system"
+        actor_id = None
+
+    conn.execute(
+        "INSERT INTO op_logs (id, actor_id, actor_label, action, target_type, target_id, "
+        "before_json, after_json, ip, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            str(uuid.uuid4()),
+            actor_id,
+            label,
+            action,
+            target_type,
+            target_id,
+            json.dumps(before, ensure_ascii=False, default=str) if before is not None else None,
+            json.dumps(after, ensure_ascii=False, default=str) if after is not None else None,
+            ip,
+            _now(),
+        ),
+    )
+
+
+async def write_op_log(
+    *,
+    actor: dict[str, Any] | None,
+    action: str,
+    target_type: str,
+    target_id: str,
+    before: dict[str, Any] | None = None,
+    after: dict[str, Any] | None = None,
+    ip: str | None = None,
+    actor_label: str | None = None,
+) -> None:
+    """
+    独立事务版日志，给"变更本身不在 db 层"的场景用（例如登录后补记一条）。
+
+    注意：能用 `_log` 塞进业务事务的，就不要用这个——
+    两条独立事务之间不存在原子性。
+    """
+
+    def _run() -> None:
+        with _connect() as conn:
+            _log(
+                conn, actor=actor, action=action, target_type=target_type,
+                target_id=target_id, before=before, after=after, ip=ip,
+                actor_label=actor_label,
+            )
+
+    await asyncio.to_thread(_run)
+
+
+async def list_op_logs(
+    *,
+    target_type: str | None = None,
+    target_id: str | None = None,
+    actor_id: str | None = None,
+    action: str | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """
+    按条件倒序查日志。limit 默认 200，与后台一页的量级一致。
+
+    刻意**不提供 offset 分页**：日志量在 MVP 规模（日预约 ≤200 单）下
+    一年也就几万条，需要翻页时说明查询条件没写对，应该加筛选而不是往下翻。
+    """
+
+    def _run() -> list[dict[str, Any]]:
+        sql = "SELECT * FROM op_logs WHERE 1 = 1"
+        args: list[Any] = []
+        if target_type:
+            sql += " AND target_type = ?"
+            args.append(target_type)
+        if target_id:
+            sql += " AND target_id = ?"
+            args.append(target_id)
+        if actor_id:
+            sql += " AND actor_id = ?"
+            args.append(actor_id)
+        if action:
+            sql += " AND action = ?"
+            args.append(action)
+        sql += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
+        args.append(limit)
+        with _connect() as conn:
+            return [dict(r) for r in conn.execute(sql, args).fetchall()]
+
+    return await asyncio.to_thread(_run)
+
+
+async def booking_timeline(booking_id: str) -> list[dict[str, Any]]:
+    """
+    一张预约的完整轨迹（R07 验收口径：「任一预约可还原完整状态轨迹」）。
+
+    直接复用 list_op_logs，不另写 SQL——轨迹与日志是同一种事实，
+    分开查会让两个入口在过滤条件上慢慢分叉。
+    """
+    return await list_op_logs(target_type="booking", target_id=booking_id, limit=100)
+
 
 
 @contextmanager
@@ -290,6 +463,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "user_id" not in columns("chat_sessions"):
         conn.execute("ALTER TABLE chat_sessions ADD COLUMN user_id TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_session_user ON chat_sessions(user_id)")
+
+    # 批次 2：设备改软删除。老库补列，新库由 SCHEMA 直接建出来。
+    if "deleted_at" not in columns("devices"):
+        conn.execute("ALTER TABLE devices ADD COLUMN deleted_at TEXT")
 
 
 # =============================================================================
@@ -577,16 +754,175 @@ async def update_password(user_id: str, pwd_hash: str, must_change: bool = False
     await asyncio.to_thread(_run)
 
 
+async def create_user_if_absent(
+    *,
+    emp_no: str,
+    name: str,
+    dept: str | None,
+    pwd_hash: str,
+    role: str = "employee",
+    actor: dict[str, Any] | None = None,
+    ip: str | None = None,
+) -> tuple[str, bool]:
+    """
+    批量导入用：工号已存在则**原样跳过**，返回 (user_id, False)。
+
+    为什么不复用 upsert_user：那个函数会覆盖已有账号的密码。
+    导入名单是每周都可能做一次的例行操作，而一份名单里出现老工号极其常见
+    （HR 导的是全量，不是增量）。用 upsert 的后果是：某位同事周一上班，
+    密码被重置成了名单里的初始密码，且必须改密——而且没有任何人被告知。
+
+    这个函数的存在就是为了让"重复导入"成为安全动作。
+    """
+    uid = str(uuid.uuid4())
+
+    def _run() -> tuple[str, bool]:
+        with _connect() as conn:
+            row = conn.execute("SELECT id FROM users WHERE emp_no = ?", (emp_no,)).fetchone()
+            if row:
+                return str(row["id"]), False
+            conn.execute(
+                "INSERT INTO users (id, emp_no, name, dept, role, status, pwd_hash, "
+                "must_change_pwd, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?, 1, ?)",
+                (uid, emp_no, name, dept, role, pwd_hash, _now()),
+            )
+            _log(
+                conn,
+                actor=actor,
+                actor_label="system:user",
+                action="user.create",
+                target_type="user",
+                target_id=uid,
+                before=None,
+                after={"emp_no": emp_no, "name": name, "dept": dept, "role": role, "status": "active"},
+                ip=ip,
+            )
+            return uid, True
+
+    return await asyncio.to_thread(_run)
+
+
+async def set_user_status(
+    user_id: str,
+    status: str,
+    *,
+    actor: dict[str, Any] | None = None,
+    ip: str | None = None,
+) -> None:
+    """
+    停用 / 启用（R08：停用即时生效）。
+
+    "即时生效"由 auth.user_from_request 保证——它每次请求都回库查 status，
+    不信 token 里的任何字段。所以这里只需要改库，不需要额外踢人下线。
+    """
+    def _run() -> None:
+        with _connect() as conn:
+            row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+            if row is None:
+                raise ApiError("USER_NOT_FOUND")
+            before = dict(row)
+            conn.execute("UPDATE users SET status = ? WHERE id = ?", (status, user_id))
+            after = dict(before)
+            after["status"] = status
+            _log(
+                conn,
+                actor=actor,
+                actor_label="system:user",
+                action=f"user.{'disable' if status == 'disabled' else 'enable'}",
+                target_type="user",
+                target_id=user_id,
+                before=_strip_secret(before),
+                after=_strip_secret(after),
+                ip=ip,
+            )
+
+    await asyncio.to_thread(_run)
+
+
+async def reset_user_password(
+    user_id: str,
+    pwd_hash: str,
+    *,
+    actor: dict[str, Any] | None = None,
+    ip: str | None = None,
+) -> None:
+    """
+    管理员重置密码：置为初始密码并强制下次登录改密。
+
+    重置后 must_change_pwd=1 不是可选项。管理员知道初始密码，
+    如果不强制改，这个密码就成了一条永久可用的后门。
+    """
+    def _run() -> None:
+        with _connect() as conn:
+            row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+            if row is None:
+                raise ApiError("USER_NOT_FOUND")
+            conn.execute(
+                "UPDATE users SET pwd_hash = ?, must_change_pwd = 1, failed_count = 0, "
+                "locked_until = NULL WHERE id = ?",
+                (pwd_hash, user_id),
+            )
+            _log(
+                conn,
+                actor=actor,
+                actor_label="system:user",
+                action="user.reset_password",
+                target_type="user",
+                target_id=user_id,
+                before={"emp_no": row["emp_no"]},
+                after={"emp_no": row["emp_no"], "must_change_pwd": 1, "locked_until": None},
+                ip=ip,
+            )
+
+    await asyncio.to_thread(_run)
+
+
+async def count_active_bookings_of_user(user_id: str) -> int:
+    """
+    某人名下未完成的预约数。停用账号时用来提示管理员——
+    按待答项 3 的默认（不自动释放），这些格子会继续被占着，
+    管理员得知道有几条需要自己处置。
+    """
+
+    def _run() -> int:
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM bookings WHERE user_id = ? AND active_flag IS NOT NULL "
+                "AND status IN ('booked','picked')",
+                (user_id,),
+            ).fetchone()
+            return int(row[0])
+
+    return await asyncio.to_thread(_run)
+
+
+def _strip_secret(user: dict[str, Any]) -> dict[str, Any]:
+    """
+    写日志前摘掉密码哈希。
+
+    op_logs 是给管理员看的，管理员不该看到别人的密码哈希——
+    即使它是 scrypt 的，也不该出现在一个能导出、能截图、能被审计查看的地方。
+    """
+    return {k: v for k, v in user.items() if k != "pwd_hash"}
+
+
 # =============================================================================
 # 设备台账
 # =============================================================================
 
 
-async def list_devices(include_offline: bool = True) -> list[dict[str, Any]]:
+async def list_devices(include_offline: bool = True, include_deleted: bool = False) -> list[dict[str, Any]]:
+    """
+    设备列表。默认**不含已删除**——软删除的设备对业务不可见，
+    但对审计可见（查日志时仍能读出设备名），这是软删除相对硬删除的唯一代价，
+    也是它换来的好处：历史预约不会变成孤儿。
+    """
     def _run() -> list[dict[str, Any]]:
-        sql = "SELECT * FROM devices"
+        sql = "SELECT * FROM devices WHERE 1 = 1"
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
         if not include_offline:
-            sql += " WHERE status != 'offline'"
+            sql += " AND status != 'offline'"
         sql += " ORDER BY asset_no"
         with _connect() as conn:
             return [dict(r) for r in conn.execute(sql).fetchall()]
@@ -612,10 +948,203 @@ async def fetch_device_by_asset_no(asset_no: str) -> dict[str, Any] | None:
     return await asyncio.to_thread(_run)
 
 
-async def set_device_status(device_id: str, status: str) -> None:
+async def count_active_bookings(device_id: str) -> int:
+    """该设备名下"未完成"的预约数（booked / picked）。删除前的唯一闸门。"""
+
+    def _run() -> int:
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM bookings WHERE device_id = ? AND active_flag IS NOT NULL "
+                "AND status IN ('booked','picked')",
+                (device_id,),
+            ).fetchone()
+            return int(row[0])
+
+    return await asyncio.to_thread(_run)
+
+
+async def set_device_status(
+    device_id: str,
+    status: str,
+    *,
+    actor: dict[str, Any] | None = None,
+    ip: str | None = None,
+) -> None:
     def _run() -> None:
         with _connect() as conn:
+            row = conn.execute("SELECT * FROM devices WHERE id = ?", (device_id,)).fetchone()
+            before = dict(row) if row else None
             conn.execute("UPDATE devices SET status = ? WHERE id = ?", (status, device_id))
+            after = dict(before or {})
+            after["status"] = status
+            _log(
+                conn,
+                actor=actor,
+                actor_label="system:device",
+                action="device.status",
+                target_type="device",
+                target_id=device_id,
+                before=before,
+                after=after,
+                ip=ip,
+            )
+
+    await asyncio.to_thread(_run)
+
+
+async def create_device(
+    asset_no: str,
+    name: str,
+    model: str | None = None,
+    location: str | None = None,
+    note: str | None = None,
+    *,
+    actor: dict[str, Any] | None = None,
+    ip: str | None = None,
+) -> str:
+    """
+    新增设备（R01）。
+
+    资产编号冲突在这里拦而不是靠调用方预查：预查与插入之间的窗口期内，
+    另一个管理员同样能插进去，最后靠 UNIQUE 兜底，不如一开始就只信 UNIQUE。
+    """
+    device_id = str(uuid.uuid4())
+
+    def _run() -> str:
+        with _connect() as conn:
+            try:
+                conn.execute(
+                    "INSERT INTO devices (id, asset_no, name, model, location, status, note, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, 'available', ?, ?)",
+                    (device_id, asset_no, name, model, location, note, _now()),
+                )
+            except sqlite3.IntegrityError as exc:
+                if "unique" in str(exc).lower():
+                    raise ApiError("DEVICE_EXISTS", f"资产编号 {asset_no} 已存在") from exc
+                raise
+            _log(
+                conn,
+                actor=actor,
+                actor_label="system:device",
+                action="device.create",
+                target_type="device",
+                target_id=device_id,
+                before=None,
+                after={
+                    "asset_no": asset_no, "name": name, "model": model,
+                    "location": location, "status": "available", "note": note,
+                },
+                ip=ip,
+            )
+            return device_id
+
+    return await asyncio.to_thread(_run)
+
+
+async def update_device(
+    device_id: str,
+    *,
+    asset_no: str,
+    name: str,
+    model: str | None,
+    location: str | None,
+    status: str,
+    note: str | None,
+    actor: dict[str, Any] | None = None,
+    ip: str | None = None,
+) -> None:
+    """编辑设备基础信息。整行覆盖式更新，before/after 快照因此可直接对比。"""
+
+    def _run() -> None:
+        with _connect() as conn:
+            row = conn.execute("SELECT * FROM devices WHERE id = ?", (device_id,)).fetchone()
+            if row is None:
+                raise ApiError("DEVICE_NOT_FOUND")
+            before = dict(row)
+            try:
+                conn.execute(
+                    "UPDATE devices SET asset_no = ?, name = ?, model = ?, location = ?, "
+                    "status = ?, note = ? WHERE id = ?",
+                    (asset_no, name, model, location, status, note, device_id),
+                )
+            except sqlite3.IntegrityError as exc:
+                if "unique" in str(exc).lower():
+                    raise ApiError("DEVICE_EXISTS", f"资产编号 {asset_no} 已被其它设备占用") from exc
+                raise
+            after = dict(before)
+            after.update({
+                "asset_no": asset_no, "name": name, "model": model,
+                "location": location, "status": status, "note": note,
+            })
+            _log(
+                conn,
+                actor=actor,
+                actor_label="system:device",
+                action="device.update",
+                target_type="device",
+                target_id=device_id,
+                before=before,
+                after=after,
+                ip=ip,
+            )
+
+    await asyncio.to_thread(_run)
+
+
+async def delete_device(
+    device_id: str,
+    *,
+    actor: dict[str, Any] | None = None,
+    ip: str | None = None,
+) -> None:
+    """
+    删除设备（R01）：无未完成预约才允许，**且是软删除**。
+
+    为什么不物理删除——两个理由，第二个是决定性的：
+      1) bookings.device_id 有外键指向 devices。历史预约永远存在，
+         物理删除必然违反外键（报错），或者被迫级联删掉历史（毁掉留痕）。
+      2) R07 要求"任一预约可还原完整状态轨迹"。设备名是轨迹的一部分，
+         删掉设备，那条轨迹就读不懂了。
+
+    所以这里做的是"从台账消失"，而不是"从数据库消失"：deleted_at 打标记，
+    列表过滤掉，历史预约与日志原样保留。资产编号仍被占用（UNIQUE 不排除已删行），
+    这是刻意的——报废设备的资产编号不该被新设备复用。
+    """
+
+    def _run() -> None:
+        with _connect() as conn:
+            row = conn.execute("SELECT * FROM devices WHERE id = ?", (device_id,)).fetchone()
+            if row is None:
+                raise ApiError("DEVICE_NOT_FOUND")
+            before = dict(row)
+
+            active = conn.execute(
+                "SELECT COUNT(*) FROM bookings WHERE device_id = ? AND active_flag IS NOT NULL "
+                "AND status IN ('booked','picked')",
+                (device_id,),
+            ).fetchone()
+            if int(active[0]) > 0:
+                raise ApiError(
+                    "DEVICE_HAS_ACTIVE_BOOKINGS",
+                    f"该设备还有 {int(active[0])} 条未完成的预约，不能删除",
+                    message=f"这台设备还有 {int(active[0])} 条未完成的预约。"
+                            "请先在「超期与未取」里处置完，或先下架让它不再被新约。",
+                )
+
+            conn.execute("UPDATE devices SET deleted_at = ? WHERE id = ?", (_now(), device_id))
+            after = dict(before)
+            after["deleted_at"] = _now()
+            _log(
+                conn,
+                actor=actor,
+                actor_label="system:device",
+                action="device.delete",
+                target_type="device",
+                target_id=device_id,
+                before=before,
+                after=after,
+                ip=ip,
+            )
 
     await asyncio.to_thread(_run)
 
@@ -646,18 +1175,25 @@ async def upsert_device(
 # =============================================================================
 
 
-async def booked_slots(device_id: str, slot_date: str) -> set[str]:
-    """某设备某天已被占用的起始时刻集合。用于展示空闲状态，**不用于判冲突**。"""
+async def booked_slots(device_id: str, slot_date: str) -> dict[str, str]:
+    """
+    某设备某天已被占用的 {slot_start: user_id}。用于展示空闲状态，**不用于判冲突**。
 
-    def _run() -> set[str]:
+    为什么返回 user_id 而不是只返回 {"10:00"}：
+    R02 的验收口径要求占用视图能区分"空闲 / 已约 / **我的** / 已下架"四态。
+    只回时刻集合，这一态就永远做不出来——员工看到自己的单和别人的单长得一样。
+    判冲突仍然只信唯一索引，这里多带一个字段不改变那条铁律。
+    """
+
+    def _run() -> dict[str, str]:
         with _connect() as conn:
             rows = conn.execute(
-                "SELECT slot_start FROM bookings "
+                "SELECT slot_start, user_id FROM bookings "
                 "WHERE device_id = ? AND slot_date = ? AND active_flag IS NOT NULL "
                 "AND status IN ('booked','picked')",
                 (device_id, slot_date),
             ).fetchall()
-            return {str(r["slot_start"]) for r in rows}
+            return {str(r["slot_start"]): str(r["user_id"]) for r in rows}
 
     return await asyncio.to_thread(_run)
 
@@ -681,6 +1217,9 @@ async def create_bookings(
     slots: list[tuple[str, str]],
     user_id: str,
     remark: str | None = None,
+    *,
+    actor: dict[str, Any] | None = None,
+    ip: str | None = None,
 ) -> list[str]:
     """
     批量落单：**同一个连接、同一个事务**，要么全成，要么全败。
@@ -691,11 +1230,15 @@ async def create_bookings(
     所以第二格冲突时抛 SLOT_TAKEN，前面那条 INSERT 随事务一起回滚。
 
     冲突判定依然只有一条路径：直接 INSERT，靠唯一索引报错。
+
+    actor 与数据写入同一事务：预约单与"谁约的"这条留痕必须同生共死，
+    否则会出现"有一单，但不知道是谁下的"这种没法追的记录。
     """
 
     def _run() -> list[str]:
         ids = [str(uuid.uuid4()) for _ in slots]
         now = _now()
+        log_actor = actor or {"id": user_id, "emp_no": f"uid:{user_id[:8]}"}
         with _connect() as conn:
             for bid, (start, end) in zip(ids, slots):
                 try:
@@ -714,6 +1257,25 @@ async def create_bookings(
                     if "unique" in msg or "uq_booking_slot" in msg:
                         raise ApiError("SLOT_TAKEN", f"{slot_date} {start} 已被占用") from exc
                     raise ApiError("INTERNAL_ERROR", f"落单失败（非冲突）：{exc}") from exc
+
+                _log(
+                    conn,
+                    actor=log_actor,
+                    action="booking.create",
+                    target_type="booking",
+                    target_id=bid,
+                    before=None,
+                    after={
+                        "device_id": device_id,
+                        "slot_date": slot_date,
+                        "slot_start": start,
+                        "slot_end": end,
+                        "user_id": user_id,
+                        "status": "booked",
+                        "remark": remark,
+                    },
+                    ip=ip,
+                )
             return ids
 
     return await asyncio.to_thread(_run)
@@ -761,46 +1323,139 @@ async def list_user_bookings(user_id: str, status: str | None = None, limit: int
     return await asyncio.to_thread(_run)
 
 
-async def cancel_booking(booking_id: str) -> bool:
+async def cancel_booking(
+    booking_id: str,
+    *,
+    actor: dict[str, Any] | None = None,
+    ip: str | None = None,
+) -> bool:
     """
     取消：status 改 cancelled 且 active_flag 置 NULL。
 
     active_flag 置 NULL 是关键——唯一索引不约束含 NULL 的行，
     这个格子因此立刻可被别人预约，无需搬数据到归档表。
+
+    读 before 与写变更在同一个事务里：分开读会让日志记下"另一个时刻"的状态，
+    并发下甚至可能记成"从 picked 取消"，而实际取消的是 booked。
     """
     def _run() -> bool:
         with _connect() as conn:
+            row = conn.execute("SELECT * FROM bookings WHERE id = ?", (booking_id,)).fetchone()
+            before = dict(row) if row else None
             cur = conn.execute(
                 "UPDATE bookings SET status = 'cancelled', active_flag = NULL "
                 "WHERE id = ? AND status = 'booked' AND active_flag IS NOT NULL",
                 (booking_id,),
             )
-            return cur.rowcount > 0
+            if cur.rowcount == 0:
+                return False
+            after = dict(before or {})
+            after.update({"status": "cancelled", "active_flag": None})
+            _log(
+                conn,
+                actor=actor or {"id": (before or {}).get("user_id"), "emp_no": "self"},
+                action="booking.cancel",
+                target_type="booking",
+                target_id=booking_id,
+                before=before,
+                after=after,
+                ip=ip,
+            )
+            return True
 
     return await asyncio.to_thread(_run)
 
 
-async def mark_picked(booking_id: str) -> bool:
+async def mark_picked(
+    booking_id: str,
+    *,
+    actor: dict[str, Any] | None = None,
+    ip: str | None = None,
+) -> bool:
     def _run() -> bool:
         with _connect() as conn:
+            row = conn.execute("SELECT * FROM bookings WHERE id = ?", (booking_id,)).fetchone()
+            before = dict(row) if row else None
+            now = _now()
             cur = conn.execute(
                 "UPDATE bookings SET status = 'picked', picked_at = ? WHERE id = ? AND status = 'booked'",
-                (_now(), booking_id),
+                (now, booking_id),
             )
-            return cur.rowcount > 0
+            if cur.rowcount == 0:
+                return False
+            after = dict(before or {})
+            after.update({"status": "picked", "picked_at": now})
+            _log(
+                conn,
+                actor=actor or {"id": (before or {}).get("user_id"), "emp_no": "self"},
+                action="booking.pickup",
+                target_type="booking",
+                target_id=booking_id,
+                before=before,
+                after=after,
+                ip=ip,
+            )
+            return True
 
     return await asyncio.to_thread(_run)
 
 
-async def mark_returned(booking_id: str) -> bool:
+async def mark_returned(
+    booking_id: str,
+    remark: str | None = None,
+    returned_at: str | None = None,
+    *,
+    actor: dict[str, Any] | None = None,
+    ip: str | None = None,
+) -> bool:
+    """
+    登记归还。
+
+    remark 与 returned_at 是 R05 的要求："归还填实际时间与备注"。
+    为什么允许用户自填归还时间：设备实际是 15:40 还的、但 17:00 才走到电脑前登记，
+    这两种时刻在追责时含义完全不同——前者证明按时归还，后者才是"登记延迟"。
+    只用服务端 now() 会把前者记成后者。
+    """
     def _run() -> bool:
         with _connect() as conn:
+            row = conn.execute("SELECT * FROM bookings WHERE id = ?", (booking_id,)).fetchone()
+            before = dict(row) if row else None
+            stamp = returned_at or _now()
+            # 备注是追加而不是覆盖：预约时填的用途说明（"带去看现场"）同样是有效信息，
+            # 归还时补的这半句（"外壳有裂痕"）不该把前半句抹掉。
+            old_remark = (before or {}).get("remark")
+            merged = remark.strip() if isinstance(remark, str) else ""
+            if merged:
+                merged = f"{old_remark}｜归还备注：{merged}" if old_remark else f"归还备注：{merged}"
+            else:
+                merged = old_remark
+
             cur = conn.execute(
-                "UPDATE bookings SET status = 'returned', returned_at = ? "
-                "WHERE id = ? AND status IN ('booked','picked')",
-                (_now(), booking_id),
+                "UPDATE bookings SET status = 'returned', returned_at = ?, remark = ?, "
+                "active_flag = NULL WHERE id = ? AND status IN ('booked','picked')",
+                (stamp, merged, booking_id),
             )
-            return cur.rowcount > 0
+            if cur.rowcount == 0:
+                return False
+            after = dict(before or {})
+            after.update({
+                "status": "returned", "returned_at": stamp, "remark": merged,
+                # 归还就把格子放回去。最初这里漏了这一句，后果是"归还过的格子
+                # 永久不可再约"——展示层看着是空的（booked_slots 过滤了 status），
+                # 一点提交就被唯一索引挡回 409，用户完全无法理解发生了什么。
+                "active_flag": None,
+            })
+            _log(
+                conn,
+                actor=actor or {"id": (before or {}).get("user_id"), "emp_no": "self"},
+                action="booking.return",
+                target_type="booking",
+                target_id=booking_id,
+                before=before,
+                after=after,
+                ip=ip,
+            )
+            return True
 
     return await asyncio.to_thread(_run)
 
@@ -809,26 +1464,166 @@ async def expire_bookings(now: str) -> int:
     """
     把已过时段仍未取走的单标记为 expired，并释放格子。
 
-    必须写成一条幂等的 UPDATE：重复执行结果一致。
+    必须写成幂等的 UPDATE：重复执行结果一致。
     在 Python 里循环"取出→判断→更新"会在多进程下重复处理，
     也会在两次扫描之间产生竞态。
+
+    实现上仍是一条 UPDATE，但**先 SELECT 出 id 再逐条记日志**：
+    过期释放也是一种状态变更，R07 要求它可追溯。
+    用一个 WHERE 子句兼顾两边（同事务，条件相同，结果必然一致）。
     """
     def _run() -> int:
+        cutoff_sql = "active_flag IS NOT NULL AND status = 'booked' AND (slot_date || 'T' || slot_end) < ?"
         with _connect() as conn:
+            rows = conn.execute(f"SELECT * FROM bookings WHERE {cutoff_sql}", (now,)).fetchall()
+            if not rows:
+                return 0
             cur = conn.execute(
-                "UPDATE bookings SET status = 'expired', active_flag = NULL "
-                "WHERE active_flag IS NOT NULL AND status = 'booked' "
-                "AND (slot_date || 'T' || slot_end) < ?",
+                f"UPDATE bookings SET status = 'expired', active_flag = NULL WHERE {cutoff_sql}",
                 (now,),
             )
+            for row in rows:
+                before = dict(row)
+                after = dict(before)
+                after.update({"status": "expired", "active_flag": None})
+                _log(
+                    conn,
+                    actor=None,
+                    actor_label="system:expire_worker",
+                    action="booking.expire",
+                    target_type="booking",
+                    target_id=str(before["id"]),
+                    before=before,
+                    after=after,
+                )
             return int(cur.rowcount)
 
     return await asyncio.to_thread(_run)
 
 
 # =============================================================================
-# 校验凭证（智能体工具 T5 → T6）
+# 超期与未取（R06）
+# -----------------------------------------------------------------------------
+# 为什么是三条查询而不是文档里的两条：
+#   expire_worker 每 60 秒会把"过了时段还没取走"的单自动置 expired（R05 要求，
+#   否则格子会被幽灵预约占着）。这意味着真正意义上的"过时未取"在库里
+#   只存活不到一分钟——管理员永远看不到一个"待处置"的过时未取列表。
+#   所以拆成语义更能指导动作的三类：
+#     awaiting_pickup  时段已开始、还没登记取走 → 管理员现场催一下，或强制结束
+#     not_returned     取走了、时段结束还没还 → 真正需要处置的那一类
+#     missed_recent    已自动过期且从未取走 → 只读，用于追责与黑名单
 # =============================================================================
+
+
+async def list_overdue(now: str) -> dict[str, list[dict[str, Any]]]:
+    """
+    超期与未取的三个清单。
+
+    now 形如 "2026-11-05T17:30"，与库内 slot_date || 'T' || slot_end 字典序可比。
+    """
+
+    def _run() -> dict[str, list[dict[str, Any]]]:
+        base = (
+            "SELECT b.*, d.asset_no, d.name AS device_name, d.location, "
+            "u.emp_no, u.name AS user_name, u.dept "
+            "FROM bookings b JOIN devices d ON d.id = b.device_id "
+            "JOIN users u ON u.id = b.user_id "
+        )
+        with _connect() as conn:
+            awaiting = conn.execute(
+                base + "WHERE b.active_flag IS NOT NULL AND b.status = 'booked' "
+                "AND (b.slot_date || 'T' || b.slot_start) <= ? "
+                "ORDER BY b.slot_date ASC, b.slot_start ASC",
+                (now,),
+            ).fetchall()
+            not_returned = conn.execute(
+                base + "WHERE b.active_flag IS NOT NULL AND b.status = 'picked' "
+                "AND (b.slot_date || 'T' || b.slot_end) < ? "
+                "ORDER BY b.slot_date ASC, b.slot_start ASC",
+                (now,),
+            ).fetchall()
+            # 近 7 天，只读。再往前的看过也没法处置，只会把列表撑长。
+            missed = conn.execute(
+                base + "WHERE b.status = 'expired' AND b.picked_at IS NULL "
+                "AND b.slot_date >= date(?, '-7 day') "
+                "ORDER BY b.slot_date DESC, b.slot_start DESC LIMIT 100",
+                (now[:10],),
+            ).fetchall()
+            return {
+                "awaiting_pickup": [dict(r) for r in awaiting],
+                "not_returned": [dict(r) for r in not_returned],
+                "missed_recent": [dict(r) for r in missed],
+            }
+
+    return await asyncio.to_thread(_run)
+
+
+async def force_close_booking(
+    booking_id: str,
+    *,
+    reason: str,
+    actor: dict[str, Any] | None = None,
+    ip: str | None = None,
+) -> dict[str, Any]:
+    """
+    管理员强制结束（R06）。
+
+    两种入参状态对应两个终态，不做"一律置 expired"的粗暴处理：
+      booked → expired   人根本没来，格子作废
+      picked → returned  设备已经取走，强行置 expired 会让"设备在哪"彻底失联；
+                         置 returned 至少如实表达"这台已回到可用池"，
+                         是否真的完好由备注说明，由人判断。
+    """
+    def _run() -> dict[str, Any]:
+        with _connect() as conn:
+            row = conn.execute("SELECT * FROM bookings WHERE id = ?", (booking_id,)).fetchone()
+            if row is None:
+                raise ApiError("BOOKING_NOT_FOUND")
+            before = dict(row)
+
+            from_status = before.get("status")
+            if from_status == "booked":
+                to_status = "expired"
+            elif from_status == "picked":
+                to_status = "returned"
+            else:
+                raise ApiError(
+                    "BOOKING_STATE_INVALID",
+                    f"当前状态 {from_status} 不在可强制结束的范围内",
+                    message="这条预约已经结束了，刷新页面试试。",
+                )
+
+            stamp = _now()
+            old_remark = before.get("remark")
+            mark = f"管理员强制结束（{reason}）" if reason else "管理员强制结束"
+            remark = f"{old_remark}｜{mark}" if old_remark else mark
+
+            conn.execute(
+                "UPDATE bookings SET status = ?, active_flag = NULL, remark = ?, "
+                "returned_at = CASE WHEN ? = 'returned' THEN ? ELSE returned_at END "
+                "WHERE id = ?",
+                (to_status, remark, to_status, stamp, booking_id),
+            )
+
+            after = dict(before)
+            after.update({
+                "status": to_status, "active_flag": None, "remark": remark,
+                "returned_at": stamp if to_status == "returned" else before.get("returned_at"),
+            })
+            _log(
+                conn,
+                actor=actor,
+                actor_label="system:force_close",
+                action="booking.force_close",
+                target_type="booking",
+                target_id=booking_id,
+                before=before,
+                after={**after, "reason": reason},
+                ip=ip,
+            )
+            return {"id": booking_id, "from": from_status, "to": to_status}
+
+    return await asyncio.to_thread(_run)
 
 
 async def create_validation(
@@ -1115,20 +1910,33 @@ async def fetch_validation(vid: str) -> dict[str, Any] | None:
 # =============================================================================
 
 
-async def stats(today: str) -> dict[str, int]:
+async def stats(today: str, now: str | None = None) -> dict[str, int]:
+    """
+    概览数字。
+
+    now 是 R06 加的两个计数需要的：它们不是"历史有多少"，而是"此刻有多少
+    需要人去处置"——管理员上班第一件事应该是看这两个数，而不是看总量。
+    不传 now 时这两个数退化成 0，避免影响只关心总量的调用方。
+    """
+    stamp = now or ""
+
     def _run() -> dict[str, int]:
         with _connect() as conn:
             row = conn.execute(
                 "SELECT "
-                "(SELECT COUNT(*) FROM devices) AS devices, "
-                "(SELECT COUNT(*) FROM devices WHERE status = 'offline') AS devices_offline, "
+                "(SELECT COUNT(*) FROM devices WHERE deleted_at IS NULL) AS devices, "
+                "(SELECT COUNT(*) FROM devices WHERE status = 'offline' AND deleted_at IS NULL) AS devices_offline, "
                 "(SELECT COUNT(*) FROM bookings WHERE slot_date = ? AND active_flag IS NOT NULL) AS bookings_today, "
                 "(SELECT COUNT(*) FROM bookings WHERE active_flag IS NOT NULL) AS bookings_active, "
                 "(SELECT COUNT(*) FROM users) AS users, "
                 "(SELECT COUNT(*) FROM users WHERE status = 'disabled') AS users_disabled, "
                 "(SELECT COUNT(*) FROM chat_sessions) AS sessions, "
-                "(SELECT COUNT(*) FROM chat_messages) AS messages",
-                (today,),
+                "(SELECT COUNT(*) FROM chat_messages) AS messages, "
+                "(SELECT COUNT(*) FROM bookings WHERE active_flag IS NOT NULL AND status = 'booked' "
+                " AND (slot_date || 'T' || slot_start) <= ?) AS awaiting_pickup, "
+                "(SELECT COUNT(*) FROM bookings WHERE active_flag IS NOT NULL AND status = 'picked' "
+                " AND (slot_date || 'T' || slot_end) < ?) AS not_returned",
+                (today, stamp, stamp),
             ).fetchone()
             return {k: int(row[k]) for k in row.keys()}
 

@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}超期与未取{% endblock %}
+{% block heading %}超期与未取{% endblock %}
+{% block subheading %}当前时间 {{ now_text }} · 每处置一条都会写入操作日志{% endblock %}
+
+{% block body %}
+{% if error %}
+<div class="card" style="border-color:var(--danger);margin-bottom:16px">
+  <div class="card-bd" style="color:var(--danger)">{{ error }}</div>
+</div>
+{% endif %}
+
+{# 第一类：时段已开始但没登记取走。
+   会自动过期（R05），但在过期之前是个能救的窗口——
+   打电话问一句"还来拿吗"，比事后记一笔"未取"有用得多。 #}
+<div class="card">
+  <div class="card-hd">
+    <h2>已开始、未登记取走</h2>
+    <span class="badge warn">{{ lists.awaiting_pickup|length }} 条</span>
+  </div>
+  {% if lists.awaiting_pickup %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width:110px">日期</th>
+        <th style="width:118px">时段</th>
+        <th>设备</th>
+        <th style="width:150px">借用人</th>
+        <th style="width:330px" class="num">处置</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in lists.awaiting_pickup %}
+      <tr>
+        <td class="mono">{{ b.slot_date }}</td>
+        <td class="mono">{{ b.slot_start }}–{{ b.slot_end }}</td>
+        <td>
+          <strong>{{ b.device_name }}</strong>
+          <div style="color:var(--muted);font-size:12px">{{ b.asset_no }} · {{ b.location or '—' }}</div>
+        </td>
+        <td>
+          {{ b.user_name }}
+          <div style="color:var(--muted);font-size:12px">{{ b.emp_no }} · {{ b.dept or '—' }}</div>
+        </td>
+        <td class="num">
+          <form method="post" action="/admin/bookings/{{ b.id }}/force-close" style="display:flex;gap:6px;justify-content:flex-end">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <input type="text" name="reason" placeholder="处置说明（选填）" maxlength="100"
+                   style="flex:1;min-width:0;padding:4px 8px;font-size:12.5px">
+            <button type="submit" class="btn sm danger">强制结束</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">没有正在占用时段的预约。</div>
+  {% endif %}
+</div>
+
+{# 第二类：取走了、时段结束还没还。这是整套系统唯一"永不自愈"的坏状态——
+   expire_worker 只处理 status='booked'，picked 的单不会自动结束，
+   不在这里处置就会一直挂着，设备也就一直显示为"使用中"。 #}
+<div class="card" style="margin-top:16px">
+  <div class="card-hd">
+    <h2>已取走、未归还</h2>
+    <span class="badge {{ 'danger' if lists.not_returned else 'mute' }}">{{ lists.not_returned|length }} 条</span>
+  </div>
+  {% if lists.not_returned %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width:110px">日期</th>
+        <th style="width:118px">时段</th>
+        <th>设备</th>
+        <th style="width:150px">借用人</th>
+        <th style="width:140px">取走时间</th>
+        <th style="width:330px" class="num">处置</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in lists.not_returned %}
+      <tr>
+        <td class="mono">{{ b.slot_date }}</td>
+        <td class="mono">{{ b.slot_start }}–{{ b.slot_end }}</td>
+        <td>
+          <strong>{{ b.device_name }}</strong>
+          <div style="color:var(--muted);font-size:12px">{{ b.asset_no }} · {{ b.location or '—' }}</div>
+        </td>
+        <td>
+          {{ b.user_name }}
+          <div style="color:var(--muted);font-size:12px">{{ b.emp_no }} · {{ b.dept or '—' }}</div>
+        </td>
+        <td class="mono" style="color:var(--muted)">{{ b.picked_at or '—' }}</td>
+        <td class="num">
+          <form method="post" action="/admin/bookings/{{ b.id }}/force-close" style="display:flex;gap:6px;justify-content:flex-end">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <input type="text" name="reason" placeholder="处置说明（选填）" maxlength="100"
+                   style="flex:1;min-width:0;padding:4px 8px;font-size:12.5px">
+            <button type="submit" class="btn sm danger">强制结束</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">没有超期未还的预约。</div>
+  {% endif %}
+</div>
+
+{# 第三类：只读。已经自动过期了，处置不了，但它是"谁老占着不来"的唯一证据。 #}
+<div class="card" style="margin-top:16px">
+  <div class="card-hd">
+    <h2>近 7 天未取已过期</h2>
+    <span class="badge mute">只读 · 用于追责与黑名单</span>
+  </div>
+  {% if lists.missed_recent %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width:110px">日期</th>
+        <th style="width:118px">时段</th>
+        <th>设备</th>
+        <th style="width:150px">借用人</th>
+        <th style="width:100px">状态</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in lists.missed_recent %}
+      <tr>
+        <td class="mono">{{ b.slot_date }}</td>
+        <td class="mono">{{ b.slot_start }}–{{ b.slot_end }}</td>
+        <td>{{ b.device_name }}<span style="color:var(--muted);font-size:12px"> · {{ b.asset_no }}</span></td>
+        <td>
+          {{ b.user_name }}
+          <div style="color:var(--muted);font-size:12px">{{ b.emp_no }} · {{ b.dept or '—' }}</div>
+        </td>
+        <td><span class="badge warn">已过期</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">近 7 天没有被自动过期的预约。</div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-bd" style="color:var(--muted);font-size:13px">
+    <strong style="color:var(--ink-2)">为什么这一页必须有人看：</strong>
+    A 方案没有审批也没有信用分，"约满但没人用"不会自己消失。
+    「已开始未登记」和「已取未还」两类会一直占着格子，直到有人在这里结束它。
+    强制结束 <em>booked</em> 记作过期、<em>picked</em> 记作已归还——
+    后者只是让设备回到可用池，是否完好要靠处置说明来记。
+  </div>
+</div>
+{% endblock %}

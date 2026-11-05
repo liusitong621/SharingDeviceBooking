@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from app import db
@@ -24,13 +24,18 @@ def now() -> datetime:
     return datetime.now().astimezone()
 
 
-async def list_devices_with_availability(slot_date: str) -> dict[str, Any]:
-    """设备列表 + 指定日期的可用格数，供列表页与工具的 find_available_slots 使用。"""
+async def list_devices_with_availability(slot_date: str, me_id: str | None = None) -> dict[str, Any]:
+    """
+    设备列表 + 指定日期的可用格数，供列表页与工具的 find_available_slots 使用。
+
+    me_id 决定能否标出"我的预约"（R02）。传 None 时退化成"全部占用一视同仁"，
+    管理员台账页正是这个视角——他看别人的单和看自己的单没区别。
+    """
     devices = await db.list_devices()
     out: list[dict[str, Any]] = []
     for d in devices:
         booked = await db.booked_slots(d["id"], slot_date)
-        states = slot_rules.slot_states(slot_date, booked, d["status"], now())
+        states = slot_rules.slot_states(slot_date, booked, d["status"], now(), me_id)
         out.append(
             {
                 "id": d["id"],
@@ -39,6 +44,7 @@ async def list_devices_with_availability(slot_date: str) -> dict[str, Any]:
                 "model": d["model"],
                 "location": d["location"],
                 "status": d["status"],
+                "note": d.get("note"),
                 "free_count": sum(1 for s in states if s["state"] == "free"),
                 "slots": states,
             }
@@ -46,7 +52,7 @@ async def list_devices_with_availability(slot_date: str) -> dict[str, Any]:
     return {"date": slot_date, "devices": out}
 
 
-async def device_slots(device_id: str, slot_date: str) -> dict[str, Any]:
+async def device_slots(device_id: str, slot_date: str, me_id: str | None = None) -> dict[str, Any]:
     device = await db.fetch_device(device_id)
     if device is None:
         raise ApiError("DEVICE_NOT_FOUND")
@@ -58,7 +64,7 @@ async def device_slots(device_id: str, slot_date: str) -> dict[str, Any]:
         pass
 
     booked = await db.booked_slots(device_id, slot_date)
-    states = slot_rules.slot_states(slot_date, booked, device["status"], now())
+    states = slot_rules.slot_states(slot_date, booked, device["status"], now(), me_id)
     return {
         "device": {
             "id": device["id"],
@@ -80,6 +86,9 @@ async def place_booking(
     slot_date: str,
     slot_starts: list[str],
     remark: str | None = None,
+    *,
+    actor: dict[str, Any] | None = None,
+    ip: str | None = None,
 ) -> dict[str, Any]:
     """
     下单（REST 与工具层共用的唯一路径）。
@@ -132,7 +141,7 @@ async def place_booking(
             message=f"每天最多预约 {slot_rules.MAX_SLOTS_PER_DAY} 格，你当天已有 {used} 格",
         )
 
-    ids = await db.create_bookings(device_id, slot_date, pairs, user_id, remark)
+    ids = await db.create_bookings(device_id, slot_date, pairs, user_id, remark, actor=actor, ip=ip)
     return {
         "bookings": [
             {
@@ -209,7 +218,12 @@ async def preflight(
     booked = await db.booked_slots(device_id, slot_date)
     conflicts = [s for s in starts if s in booked]
     for s in conflicts:
-        problems.append({"code": "SLOT_TAKEN", "message": f"时段 {s} 已被他人预约"})
+        # 自己已经约过的那一格也在这里，但说"已被他人预约"会让用户以为被人抢了，
+        # 他会去找管理员而不是回「我的预约」看看。文案必须区分。
+        if str(booked.get(s)) == str(user_id):
+            problems.append({"code": "SLOT_TAKEN", "message": f"时段 {s} 你自己已经约过一单了"})
+        else:
+            problems.append({"code": "SLOT_TAKEN", "message": f"时段 {s} 已被他人预约"})
 
     used = await db.count_bookings_on_date(user_id, slot_date)
     remain = slot_rules.MAX_SLOTS_PER_DAY - used
@@ -225,7 +239,7 @@ async def preflight(
         })
 
     # 替代方案：当天还有空的格子。模型有了它，才能在冲突时不空手而回。
-    states = slot_rules.slot_states(slot_date, booked, device["status"], now())
+    states = slot_rules.slot_states(slot_date, booked, device["status"], now(), user_id)
     free = [s["start"] for s in states if s["state"] == "free"]
 
     return {
@@ -250,7 +264,7 @@ def _device_brief(device: dict) -> dict[str, Any]:
     }
 
 
-async def cancel(user: dict, booking_id: str) -> dict[str, Any]:
+async def cancel(user: dict, booking_id: str, *, ip: str | None = None) -> dict[str, Any]:
     booking = await db.fetch_booking(booking_id)
     if booking is None:
         raise ApiError("BOOKING_NOT_FOUND")
@@ -258,29 +272,92 @@ async def cancel(user: dict, booking_id: str) -> dict[str, Any]:
         raise ApiError("BOOKING_FORBIDDEN")
     if booking["status"] != "booked":
         raise ApiError("BOOKING_STATE_INVALID", f"当前状态 {booking['status']} 不可取消")
-    if not await db.cancel_booking(booking_id):
+    if not await db.cancel_booking(booking_id, actor=user, ip=ip):
         # 并发下可能已被别人改状态；这里如实报状态错误，不假装成功
         raise ApiError("BOOKING_STATE_INVALID", "预约状态已变化，请刷新后重试")
     return {"id": booking_id, "status": "cancelled", "slot_released": True}
 
 
-async def pickup(user: dict, booking_id: str) -> dict[str, Any]:
+async def pickup(user: dict, booking_id: str, *, ip: str | None = None) -> dict[str, Any]:
     booking = await db.fetch_booking(booking_id)
     if booking is None:
         raise ApiError("BOOKING_NOT_FOUND")
     if booking["user_id"] != user["id"] and user.get("role") != "admin":
         raise ApiError("BOOKING_FORBIDDEN")
-    if not await db.mark_picked(booking_id):
+    if not await db.mark_picked(booking_id, actor=user, ip=ip):
         raise ApiError("BOOKING_STATE_INVALID", "只有未取走的预约才能登记取用")
     return {"id": booking_id, "status": "picked"}
 
 
-async def give_back(user: dict, booking_id: str) -> dict[str, Any]:
+def _normalize_returned_at(raw: str | None, now_dt: datetime) -> str | None:
+    """
+    把用户填的归还时间规整成库内格式。
+
+    接受两种输入：完整 datetime-local（2026-11-05T15:40）与只有时分（15:40）。
+    后者按今天补日期——但**只有当天归还才能这么补**，否则"15:40"会被记成
+    一个莫名其妙的日期。所以时分形态只在 slot_date 就是今天时放行，由调用方保证。
+
+    允许最多 5 分钟的时钟前移（用户手机时间快一点是常态），
+    超过就是填错了，直接拒绝而不是悄悄截断。
+    """
+    if not raw or not raw.strip():
+        return None
+    value = raw.strip().replace(" ", "T")
+    if len(value) == 5 and value[2] == ":":
+        value = f"{now_dt.date().isoformat()}T{value}"
+    parsed: datetime | None = None
+    if len(value) == 16:
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            parsed = None
+    if parsed is None:
+        raise ApiError("INVALID_RETURN_TIME", f"归还时间格式应为 2026-11-05T15:40，收到 {raw}")
+    parsed = parsed.astimezone()
+    if parsed > now_dt + timedelta(minutes=5):
+        raise ApiError("INVALID_RETURN_TIME", "归还时间不能是未来")
+    return parsed.isoformat(timespec="seconds")
+
+
+async def give_back(
+    user: dict,
+    booking_id: str,
+    remark: str | None = None,
+    returned_at: str | None = None,
+    *,
+    ip: str | None = None,
+) -> dict[str, Any]:
+    """
+    登记归还（R05：归还填实际时间与备注）。
+
+    两个字段都可空：只点一个"已归还"按钮也应该能成功，
+    强制填表只会让人随手打个"无"。
+    """
     booking = await db.fetch_booking(booking_id)
     if booking is None:
         raise ApiError("BOOKING_NOT_FOUND")
     if booking["user_id"] != user["id"] and user.get("role") != "admin":
         raise ApiError("BOOKING_FORBIDDEN")
-    if not await db.mark_returned(booking_id):
+
+    if remark is not None and len(remark) > 200:
+        raise ApiError("INVALID_REQUEST", "备注不能超过 200 字")
+
+    stamp = _normalize_returned_at(returned_at, now())
+    if not await db.mark_returned(booking_id, remark, stamp, actor=user, ip=ip):
         raise ApiError("BOOKING_STATE_INVALID", "该预约已归还或已取消")
-    return {"id": booking_id, "status": "returned"}
+    return {"id": booking_id, "status": "returned", "returned_at": stamp}
+
+
+async def force_close(user: dict, booking_id: str, reason: str, *, ip: str | None = None) -> dict[str, Any]:
+    """
+    管理员强制结束（R06）。
+
+    只有管理员能调——这里的校验不是装饰：口子一旦开给员工，
+    "约不到就把它强制结束"会成为绕过冲突判定的后门。
+    """
+    if user.get("role") != "admin":
+        raise ApiError("FORBIDDEN", "只有管理员可以强制结束预约")
+    reason = (reason or "").strip()
+    if len(reason) > 100:
+        raise ApiError("INVALID_REQUEST", "处置说明不能超过 100 字")
+    return await db.force_close_booking(booking_id, reason=reason, actor=user, ip=ip)

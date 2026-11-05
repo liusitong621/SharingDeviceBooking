@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}操作日志{% endblock %}
+{% block heading %}操作日志{% endblock %}
+{% block subheading %}只追加、不提供删除入口 · 最多显示最近 300 条{% endblock %}
+
+{% block body %}
+<div class="card">
+  <div class="card-bd">
+    <form method="get" action="/admin/logs" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)">
+        对象类型
+        <select name="target_type" style="padding:6px 8px;font-size:13px">
+          <option value="">全部</option>
+          <option value="booking" {% if filters.target_type == 'booking' %}selected{% endif %}>预约</option>
+          <option value="device" {% if filters.target_type == 'device' %}selected{% endif %}>设备</option>
+          <option value="user" {% if filters.target_type == 'user' %}selected{% endif %}>账号</option>
+        </select>
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)">
+        对象 ID
+        <input type="text" name="target_id" value="{{ filters.target_id }}" placeholder="粘一条预约 id，看它的完整轨迹"
+               style="padding:6px 8px;font-size:13px;width:330px" class="mono">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)">
+        动作
+        <input type="text" name="action" value="{{ filters.action }}" placeholder="booking.force_close"
+               style="padding:6px 8px;font-size:13px;width:190px" class="mono">
+      </label>
+      <button type="submit" class="btn primary">筛选</button>
+      <a href="/admin/logs" class="btn">清空</a>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  {% if logs %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width:170px">时间</th>
+        <th style="width:110px">操作人</th>
+        <th style="width:110px">动作</th>
+        <th style="width:100px">对象</th>
+        <th>变更</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td class="mono" style="color:var(--muted);font-size:12px">{{ log.created_at }}</td>
+        <td>
+          <span class="mono">{{ log.actor_label }}</span>
+          {% if log.ip %}<div style="color:var(--muted);font-size:11px">{{ log.ip }}</div>{% endif %}
+        </td>
+        <td>
+          {{ log.action_label }}
+          {% if log.action == 'booking.force_close' %}<div style="color:var(--muted);font-size:11px">管理员处置</div>{% endif %}
+          {% if log.action == 'booking.expire' %}<div style="color:var(--muted);font-size:11px">系统任务</div>{% endif %}
+        </td>
+        <td class="mono" style="color:var(--muted);font-size:11.5px" title="{{ log.target_id }}">
+          {{ log.target_type }}<br>{{ log.target_id[:8] }}…
+        </td>
+        <td style="font-size:12.5px;line-height:1.6">{{ log.brief }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">没有匹配的记录。</div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-bd" style="color:var(--muted);font-size:13px">
+    <strong style="color:var(--ink-2)">这张表能回答什么：</strong>
+    "这单是谁取消的""这台设备什么时候被下架的""这个人的密码谁重置的"。
+    日志与业务变更<strong style="color:var(--ink-2)">写在同一个事务里</strong>，
+    所以不存在"改了但没记"的记录。系统动作会明确标成
+    <span class="mono">system:expire_worker</span> 这类标签，不会伪装成人操作的。
+  </div>
+</div>
+{% endblock %}

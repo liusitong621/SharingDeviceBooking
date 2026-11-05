@@ -18,7 +18,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -29,6 +31,7 @@ from fastapi.templating import Jinja2Templates
 
 from app import auth, booking_service, db
 from app.auth import current_user
+from app.domain import slots as slot_rules
 from app.errors import ApiError
 
 logger = logging.getLogger("app.web")
@@ -95,6 +98,31 @@ async def guard(request: Request) -> tuple[dict[str, Any] | None, RedirectRespon
     if user.get("must_change_pwd") and request.url.path != "/change-password":
         return user, RedirectResponse("/change-password", status_code=302)
     return user, None
+
+
+async def require_admin(request: Request) -> tuple[dict[str, Any] | None, Any | None]:
+    """
+    管理员页面的公共前置：先过登录/改密，再判角色。
+
+    抽出来的理由很实际：管理页从 2 个涨到 6 个之后，这段判断会在每个函数里
+    重复一遍，而每重复一次就多一次"某天新增页面忘了判角色"的机会。
+    权限检查最怕的不是写错，是漏写。
+    """
+    user, redirect = await guard(request)
+    if redirect:
+        return None, redirect
+    if user.get("role") != "admin":
+        return None, render(
+            request, "error.html",
+            {"user": user, "code": 403, "message": "这个页面只有管理员可以访问"},
+            403,
+        )
+    return user, None
+
+
+def _ip(request: Request) -> str | None:
+    """客户端 IP，仅用于操作留痕。不采信 X-Forwarded-For，理由见 booking_api._ip。"""
+    return request.client.host if request.client else None
 
 
 # =============================================================================
@@ -228,27 +256,31 @@ async def auth_me(user: dict = Depends(current_user)) -> dict:
 
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request) -> HTMLResponse:
-    user, redirect = await guard(request)
-    if redirect:
-        return redirect
-    if user.get("role") != "admin":
-        return render(request, "error.html", {"user": user, "code": 403, "message": "这个页面只有管理员可以访问"}, 403)
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
 
     today = booking_service.now().date().isoformat()
-    st = await db.stats(today)
+    st = await db.stats(today, booking_service.now().strftime("%Y-%m-%dT%H:%M"))
     return render(request, "admin_dashboard.html", {"user": user, "stats": st, "today": today})
 
 
 @router.get("/admin/devices", response_class=HTMLResponse)
-async def admin_devices(request: Request) -> HTMLResponse:
-    user, redirect = await guard(request)
-    if redirect:
-        return redirect
-    if user.get("role") != "admin":
-        return render(request, "error.html", {"user": user, "code": 403, "message": "这个页面只有管理员可以访问"}, 403)
+async def admin_devices(request: Request, edit: str | None = None) -> HTMLResponse:
+    """
+    设备台账。
 
-    data = await booking_service.list_devices_with_availability(booking_service.now().date().isoformat())
-    return render(request, "admin_devices.html", {"user": user, "devices": data["devices"]})
+    edit 走 query 参数而不是行内展开：表格里塞一个 <form> 会把布局撑坏，
+    而引前端框架只为了一个编辑框，代价远大于收益。
+    `/admin/devices?edit=<id>` 既能让管理员直接收藏某一台的编辑链接，
+    也天然支持"改完 302 回来"的流程。
+    """
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    target = await db.fetch_device(edit) if edit else None
+    return await _devices_page(request, user, edit_device=target)
 
 
 @router.post("/admin/devices/{device_id}/status")
@@ -295,7 +327,18 @@ async def my_bookings_page(request: Request) -> HTMLResponse:
     if redirect:
         return redirect
     rows = await db.list_user_bookings(user["id"])
-    return render(request, "my_bookings.html", {"user": user, "bookings": rows, "now_date": booking_service.now().date().isoformat()})
+    now_dt = booking_service.now()
+    return render(
+        request,
+        "my_bookings.html",
+        {
+            "user": user,
+            "bookings": rows,
+            "now_date": now_dt.date().isoformat(),
+            # datetime-local 的默认值：让"现在归还"成为零输入操作
+            "now_input": now_dt.strftime("%Y-%m-%dT%H:%M"),
+        },
+    )
 
 
 @router.post("/bookings/{booking_id}/{action}")
@@ -311,11 +354,20 @@ async def booking_action(request: Request, booking_id: str, action: str):
 
     try:
         if action == "cancel":
-            await booking_service.cancel(user, booking_id)
+            await booking_service.cancel(user, booking_id, ip=_ip(request))
         elif action == "pickup":
-            await booking_service.pickup(user, booking_id)
+            await booking_service.pickup(user, booking_id, ip=_ip(request))
         elif action == "return":
-            await booking_service.give_back(user, booking_id)
+            # 归还的两个字段都可空：只点一下"已归还"也必须能提交成功
+            remark = form.get("remark")
+            returned_at = form.get("returned_at")
+            await booking_service.give_back(
+                user,
+                booking_id,
+                remark if isinstance(remark, str) else None,
+                returned_at if isinstance(returned_at, str) else None,
+                ip=_ip(request),
+            )
         else:
             raise ApiError("INVALID_REQUEST", f"未知动作 {action}")
     except ApiError as exc:
@@ -326,3 +378,628 @@ async def booking_action(request: Request, booking_id: str, action: str):
             exc.status,
         )
     return RedirectResponse("/bookings", status_code=302)
+
+
+# =============================================================================
+# R06 超期与未取
+# -----------------------------------------------------------------------------
+# 这一页存在的理由写在需求清单风险第 2 条里：
+# "约满但没人用"不会自动消失，只能靠这两个清单 + 管理员手动释放。
+# 也就是说，这一页不是"锦上添花的功能"，它是 A 方案（无审批、无信用）的兜底。
+# =============================================================================
+
+
+async def _overdue_page(request: Request, user: dict, error: str | None = None) -> HTMLResponse:
+    now_dt = booking_service.now()
+    data = await db.list_overdue(now_dt.strftime("%Y-%m-%dT%H:%M"))
+    return render(
+        request,
+        "admin_overdue.html",
+        {
+            "user": user,
+            "lists": data,
+            "now_text": now_dt.strftime("%Y-%m-%d %H:%M"),
+            "error": error,
+        },
+    )
+
+
+@router.get("/admin/overdue", response_class=HTMLResponse)
+async def admin_overdue(request: Request) -> HTMLResponse:
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+    return await _overdue_page(request, user)
+
+
+# =============================================================================
+# 员工侧占用视图（R02）
+# -----------------------------------------------------------------------------
+# 为什么在已经有聊天助手的情况下还要这一页：
+#   助手擅长"我明天想借频谱仪，有空的吗"这种模糊问法；
+#   而 R02 要的是"按日期 × 设备看 6 格状态"的确定性视图——
+#   一眼扫完三台设备哪格空着，比跟模型来回三轮快得多。
+#   两者不是替代关系：助手负责找，这一页负责看和点。
+#
+# 为什么下单用表单 POST 而不是 fetch：
+#   与后台保持一致——按钮能不能点由服务端状态决定，不依赖脚本是否加载成功。
+# =============================================================================
+
+
+def _slot_error_text(code: str | None) -> str | None:
+    """
+    把 URL 上的错误码翻成一句人话。
+
+    刻意不接受任意错误文案：URL 里的文字会被渲染进页面，
+    虽然 Jinja 会转义，但"只允许白名单里的码"比"信任转义"更省心。
+    """
+    if not code:
+        return None
+    return {
+        "SLOT_TAKEN": "这格刚被别人约走了，换一格试试。",
+        "QUOTA_EXCEEDED": "你当天已经约满 2 格，先取消一格再约。",
+        "DEVICE_OFFLINE": "这台设备已下架，暂时不能约。",
+        "DATE_IN_PAST": "这格已经开始或已过期，不能再约。",
+        "DATE_OUT_OF_RANGE": "只能预约 14 天内的时段。",
+        "INVALID_SLOT": "时段不合法，刷新页面重试。",
+        "DEVICE_NOT_FOUND": "设备不存在，可能刚被删除。",
+        "INVALID_RETURN_TIME": "归还时间不合法。",
+    }.get(code, "操作没有成功，请刷新后重试。")
+
+
+@router.get("/devices", response_class=HTMLResponse)
+async def devices_page(request: Request, date: str | None = None) -> HTMLResponse:
+    user, redirect = await guard(request)
+    if redirect:
+        return redirect
+
+    now_dt = booking_service.now()
+    day = date or now_dt.date().isoformat()
+    if slot_rules.parse_date(day) is None:
+        day = now_dt.date().isoformat()
+
+    data = await booking_service.list_devices_with_availability(day, user["id"])
+    return render(
+        request,
+        "devices.html",
+        {
+            "user": user,
+            "devices": data["devices"],
+            "date": day,
+            "today": now_dt.date().isoformat(),
+            "days": slot_rules.next_days(now_dt, 14),
+            "error": _slot_error_text(request.query_params.get("err")),
+            "notice": "预约成功。" if request.query_params.get("ok") else None,
+        },
+    )
+
+
+@router.post("/bookings/new")
+async def booking_create_form(request: Request):
+    """
+    占用视图上点空格直接下单。
+
+    这是**人点出来的**预约，与智能体那条"模型发起 → 人确认"的路径最终都落到
+    place_booking 同一个写入口，所以配额、冲突、日期规则一份都不会分叉。
+    """
+    user, redirect = await guard(request)
+    if redirect:
+        return redirect
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    device_id = form.get("device_id")
+    slot_date = form.get("slot_date")
+    slot_start = form.get("slot_start")
+    back = form.get("back")
+    target = back if isinstance(back, str) and back.startswith("/devices") else "/devices"
+
+    if not all(isinstance(v, str) and v for v in (device_id, slot_date, slot_start)):
+        raise ApiError("INVALID_REQUEST", "缺少设备、日期或时段")
+
+    try:
+        await booking_service.place_booking(
+            user["id"], device_id, slot_date, [slot_start],
+            actor=user, ip=_ip(request),
+        )
+    except ApiError as exc:
+        # 回到原页面而不是错误页：用户正在挑格子，跳走就得重新选日期
+        sep = "&" if "?" in target else "?"
+        return RedirectResponse(f"{target}{sep}err={exc.code}", status_code=302)
+
+    sep = "&" if "?" in target else "?"
+    return RedirectResponse(f"{target}{sep}ok=1", status_code=302)
+
+
+@router.post("/admin/bookings/{booking_id}/force-close")
+async def admin_force_close(request: Request, booking_id: str):
+    """
+    强制结束。POST 完立刻 302 回列表，而不是渲染一个"操作成功"页——
+    管理员会连续处理好几条，每处理一条就多一次点击是纯粹的浪费。
+    """
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    reason = form.get("reason")
+    try:
+        result = await booking_service.force_close(
+            user, booking_id, reason if isinstance(reason, str) else "", ip=_ip(request)
+        )
+    except ApiError as exc:
+        # 用页内提示而不是错误页：管理员刚填了处置说明，跳走就白填了
+        return await _overdue_page(request, user, error=exc.message)
+
+    logger.info(
+        "管理员 %s 强制结束预约 %s：%s -> %s（%s）",
+        user["emp_no"], booking_id, result["from"], result["to"], reason or "无说明",
+    )
+    return RedirectResponse("/admin/overdue", status_code=302)
+
+
+# =============================================================================
+# R01 设备台账增删改
+# -----------------------------------------------------------------------------
+# 上下架已经存在；这里补的是"台账本身能维护"。
+# 没有这三个入口之前，新买一台设备只能手工往 SQLite 里插一行。
+# =============================================================================
+
+
+async def _devices_page(
+    request: Request,
+    user: dict,
+    error: str | None = None,
+    form: dict[str, str] | None = None,
+    edit_device: dict[str, Any] | None = None,
+) -> HTMLResponse:
+    day = booking_service.now().date().isoformat()
+    data = await booking_service.list_devices_with_availability(day)
+    return render(
+        request,
+        "admin_devices.html",
+        {
+            "user": user,
+            "devices": data["devices"],
+            "today": day,
+            "error": error,
+            "form": form or {},
+            "edit_device": edit_device,
+        },
+    )
+
+
+def _clean(value: Any, limit: int = 60) -> str:
+    return (value.strip() if isinstance(value, str) else "")[:limit]
+
+
+@router.post("/admin/devices")
+async def admin_create_device(request: Request):
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    asset_no = _clean(form.get("asset_no"), 40)
+    name = _clean(form.get("name"), 60)
+    model = _clean(form.get("model"), 80) or None
+    location = _clean(form.get("location"), 80) or None
+    note = _clean(form.get("note"), 200) or None
+
+    filled = {"asset_no": asset_no, "name": name, "model": model or "", "location": location or "", "note": note or ""}
+    if not asset_no or not name:
+        return await _devices_page(request, user, "资产编号和设备名称都必须填", filled)
+
+    try:
+        await db.create_device(asset_no, name, model, location, note, actor=user, ip=_ip(request))
+    except ApiError as exc:
+        return await _devices_page(request, user, exc.message, filled)
+
+    logger.info("管理员 %s 新增设备 %s %s", user["emp_no"], asset_no, name)
+    return RedirectResponse("/admin/devices", status_code=302)
+
+
+@router.post("/admin/devices/{device_id}/edit")
+async def admin_edit_device(request: Request, device_id: str):
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    asset_no = _clean(form.get("asset_no"), 40)
+    name = _clean(form.get("name"), 60)
+    model = _clean(form.get("model"), 80) or None
+    location = _clean(form.get("location"), 80) or None
+    note = _clean(form.get("note"), 200) or None
+    status = _clean(form.get("status"), 20) or "available"
+
+    if not asset_no or not name:
+        return await _devices_page(request, user, "资产编号和设备名称都必须填")
+    if status not in ("available", "borrowed", "offline"):
+        return await _devices_page(request, user, "设备状态只能是 available / borrowed / offline")
+
+    try:
+        await db.update_device(
+            device_id, asset_no=asset_no, name=name, model=model,
+            location=location, status=status, note=note,
+            actor=user, ip=_ip(request),
+        )
+    except ApiError as exc:
+        return await _devices_page(request, user, exc.message)
+
+    logger.info("管理员 %s 编辑设备 %s", user["emp_no"], asset_no)
+    return RedirectResponse("/admin/devices", status_code=302)
+
+
+@router.post("/admin/devices/{device_id}/delete")
+async def admin_delete_device(request: Request, device_id: str):
+    """
+    删除（软删除）。
+
+    这里**不做二次确认弹窗**，而是靠"有未完成预约就删不掉"这条硬约束——
+    弹窗挡不住误点，约束才挡得住。前端仍然用 confirm()，那是给手滑用的。
+    """
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    try:
+        await db.delete_device(device_id, actor=user, ip=_ip(request))
+    except ApiError as exc:
+        return await _devices_page(request, user, exc.message)
+
+    logger.info("管理员 %s 删除设备 %s", user["emp_no"], device_id)
+    return RedirectResponse("/admin/devices", status_code=302)
+
+
+# =============================================================================
+# R08 账号管理
+# -----------------------------------------------------------------------------
+# 批量导入刻意用"粘贴文本"而不是上传 Excel/CSV 文件：
+# 上传要多一个文件解析依赖（openpyxl/python-multipart 已在，但编码问题永远有），
+# 而 HR 给的名单本来就三四十行，从 Excel 复制过来粘贴是最短路径。
+# =============================================================================
+
+# 导入时没写初始密码就用这个，与 seed.py 的演示账号保持一致，便于培训时统一口径
+DEFAULT_IMPORT_PASSWORD = "Staff@12345"
+MAX_IMPORT_ROWS = 500
+
+
+def _parse_import(text: str) -> tuple[list[dict[str, str]], list[str]]:
+    """
+    解析粘贴的名单。返回 (有效行, 错误说明)。
+
+    支持逗号（中英文）、制表符分隔——从 Excel 复制过来是制表符，
+    从聊天窗口复制过来是逗号，两种都得认，否则用户会以为功能坏了。
+
+    首行如果是表头（含"工号"）直接跳过：没人会读说明，但每个人都会粘表头。
+    """
+    rows: list[dict[str, str]] = []
+    errors: list[str] = []
+
+    for line_no, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in re.split(r"[,，\t]+", line)]
+        if line_no == 1 and parts and "工号" in parts[0]:
+            continue
+        if len(parts) < 2:
+            errors.append(f"第 {line_no} 行：至少需要「工号,姓名」两列")
+            continue
+
+        emp_no, name = parts[0], parts[1]
+        if not emp_no.isalnum():
+            errors.append(f"第 {line_no} 行：工号 {emp_no} 只能包含字母和数字")
+            continue
+        if not name:
+            errors.append(f"第 {line_no} 行：姓名为空")
+            continue
+
+        dept = parts[2] if len(parts) > 2 and parts[2] else None
+        pwd = parts[3] if len(parts) > 3 and parts[3] else DEFAULT_IMPORT_PASSWORD
+        weak = auth.validate_password_strength(pwd)
+        if weak:
+            errors.append(f"第 {line_no} 行（{emp_no}）：{weak}")
+            continue
+
+        rows.append({"emp_no": emp_no, "name": name, "dept": dept or "", "pwd": pwd})
+        if len(rows) > MAX_IMPORT_ROWS:
+            errors.append(f"一次最多导入 {MAX_IMPORT_ROWS} 行，请分批")
+            break
+
+    return rows, errors
+
+
+async def _users_page(
+    request: Request,
+    user: dict,
+    error: str | None = None,
+    notice: str | None = None,
+    skipped: list[str] | None = None,
+) -> HTMLResponse:
+    users = await db.list_users(limit=500)
+    return render(
+        request,
+        "admin_users.html",
+        {
+            "user": user,
+            "users": users,
+            "error": error,
+            "notice": notice,
+            "skipped": skipped or [],
+            "default_password": DEFAULT_IMPORT_PASSWORD,
+        },
+    )
+
+
+@router.get("/admin/users", response_class=HTMLResponse)
+async def admin_users(request: Request) -> HTMLResponse:
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+    return await _users_page(request, user)
+
+
+@router.post("/admin/users/import")
+async def admin_import_users(request: Request):
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    raw = form.get("roster")
+    text = raw if isinstance(raw, str) else ""
+    if not text.strip():
+        return await _users_page(request, user, error="名单是空的，把「工号,姓名,部门」粘进来")
+
+    rows, errors = _parse_import(text)
+    if not rows:
+        return await _users_page(request, user, error="；".join(errors) or "没有可导入的行")
+
+    created = 0
+    skipped: list[str] = []
+    for row in rows:
+        _, ok = await db.create_user_if_absent(
+            emp_no=row["emp_no"],
+            name=row["name"],
+            dept=row["dept"] or None,
+            pwd_hash=auth.hash_password(row["pwd"]),
+            actor=user,
+            ip=_ip(request),
+        )
+        if ok:
+            created += 1
+        else:
+            skipped.append(row["emp_no"])
+
+    notice = f"导入完成：新增 {created} 个账号。"
+    if skipped:
+        # 明确说"已存在的不动"，否则管理员会以为导入失败
+        notice += f"跳过 {len(skipped)} 个已存在的工号（密码未被重置）：{'、'.join(skipped[:10])}"
+        if len(skipped) > 10:
+            notice += " 等"
+    logger.info("管理员 %s 导入账号：新增 %d，跳过 %d", user["emp_no"], created, len(skipped))
+
+    return await _users_page(request, user, notice=notice, skipped=skipped, error="；".join(errors) or None)
+
+
+@router.post("/admin/users/{user_id}/status")
+async def admin_set_user_status(request: Request, user_id: str):
+    """
+    停用 / 启用账号。
+
+    停用**不自动释放**名下未完成的预约（待答项 3 的默认口径）。
+    这里不偷偷替管理员做决定，而是回到列表页告诉他"此人手上还有 N 单"，
+    由人去「超期与未取」处置——那才是有人负责的处置方式。
+    """
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    target = _clean(form.get("status"), 20)
+    if target not in ("active", "disabled"):
+        return await _users_page(request, user, error="状态只能是 active / disabled")
+    if user_id == user["id"]:
+        # 把自己停用会立刻锁死后台入口，且没有任何人能被恢复它
+        return await _users_page(request, user, error="不能停用自己的账号")
+
+    try:
+        await db.set_user_status(user_id, target, actor=user, ip=_ip(request))
+    except ApiError as exc:
+        return await _users_page(request, user, error=exc.message)
+
+    notice = "账号状态已更新。"
+    if target == "disabled":
+        pending = await db.count_active_bookings_of_user(user_id)
+        if pending:
+            notice += f"该员工名下还有 {pending} 条未完成的预约，需要在「超期与未取」里处置。"
+    return await _users_page(request, user, notice=notice)
+
+
+@router.post("/admin/users/{user_id}/reset")
+async def admin_reset_password(request: Request, user_id: str):
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    target = await db.fetch_user(user_id)
+    if target is None:
+        return await _users_page(request, user, error="账号不存在")
+
+    try:
+        await db.reset_user_password(
+            user_id, auth.hash_password(DEFAULT_IMPORT_PASSWORD), actor=user, ip=_ip(request)
+        )
+    except ApiError as exc:
+        return await _users_page(request, user, error=exc.message)
+
+    logger.info("管理员 %s 重置了 %s 的密码", user["emp_no"], target["emp_no"])
+    # 密码明文只在这一句提示里出现，不写日志——日志会被更多人看到
+    return await _users_page(
+        request, user,
+        notice=f"已把 {target['emp_no']} 的密码重置为 {DEFAULT_IMPORT_PASSWORD}，对方下次登录需强制改密。",
+    )
+
+
+# =============================================================================
+# R07 操作日志
+# =============================================================================
+
+# 字段中文名。日志要给人看，直接甩 status: booked → cancelled 等于没翻译。
+_FIELD_LABELS = {
+    "status": "状态",
+    "asset_no": "资产编号",
+    "name": "名称",
+    "model": "型号",
+    "location": "位置",
+    "note": "备注",
+    "device_id": "设备",
+    "slot_date": "日期",
+    "slot_start": "时段起点",
+    "slot_end": "时段终点",
+    "remark": "备注",
+    "picked_at": "取走时间",
+    "returned_at": "归还时间",
+    "active_flag": "占用标记",
+    "deleted_at": "删除时间",
+    "user_id": "员工",
+    "dept": "部门",
+    "role": "角色",
+    "must_change_pwd": "强制改密",
+    "locked_until": "锁定至",
+}
+
+_STATUS_LABELS = {
+    "booked": "待取用", "picked": "使用中", "returned": "已归还",
+    "cancelled": "已取消", "expired": "已过期",
+    "available": "可借", "borrowed": "借出中", "offline": "已下架",
+    "active": "启用", "disabled": "停用",
+}
+
+# 动作码 → 人话。日志页是给管理员看的，不是给开发者看的。
+_ACTION_LABELS = {
+    "booking.create": "创建预约",
+    "booking.cancel": "取消预约",
+    "booking.pickup": "登记取走",
+    "booking.return": "登记归还",
+    "booking.expire": "自动过期",
+    "booking.force_close": "强制结束",
+    "device.create": "新增设备",
+    "device.update": "编辑设备",
+    "device.status": "上下架",
+    "device.delete": "删除设备",
+    "user.create": "新建账号",
+    "user.disable": "停用账号",
+    "user.enable": "启用账号",
+    "user.reset_password": "重置密码",
+}
+
+
+def _pretty(value: Any) -> str:
+    if value is None or value == "":
+        return "—"
+    if isinstance(value, str) and value in _STATUS_LABELS:
+        return _STATUS_LABELS[value]
+    return str(value)
+
+
+def _diff_brief(before_json: str | None, after_json: str | None) -> str:
+    """
+    把 before/after 快照压缩成一行"哪几个字段变了"。
+
+    为什么不直接把 JSON 摊在表格里：一张日志页 300 行，每行一段 JSON，
+    管理员只会放弃阅读。而"状态：待取用 → 已取消"是一眼就能懂的。
+
+    只展示有变化的字段；没有变化（比如强制结束后 status 又变回来）就如实说
+    "无字段变化"，不假装有内容。
+    """
+    try:
+        before = json.loads(before_json) if before_json else None
+        after = json.loads(after_json) if after_json else None
+    except (ValueError, TypeError):
+        return "（快照无法解析）"
+
+    if not after:
+        return "—"
+
+    if not before:
+        # 新建：列出最能说明"这条是什么"的字段
+        keys = ["asset_no", "name", "slot_date", "slot_start", "emp_no", "status"]
+        parts = [f"{_FIELD_LABELS.get(k, k)} {_pretty(after[k])}" for k in keys if k in after]
+        return "建立：" + " · ".join(parts) if parts else "建立"
+
+    changes: list[str] = []
+    for key, new_value in after.items():
+        if key == "reason":
+            continue
+        old_value = before.get(key)
+        if old_value != new_value:
+            changes.append(
+                f"{_FIELD_LABELS.get(key, key)} {_pretty(old_value)} → {_pretty(new_value)}"
+            )
+    return "；".join(changes) if changes else "无字段变化"
+
+
+@router.get("/admin/logs", response_class=HTMLResponse)
+async def admin_logs(request: Request) -> HTMLResponse:
+    """
+    日志查询。支持按对象类型、对象 id、动作筛选。
+
+    target_id 是这里最有用的一个筛选：管理员从"这条预约不对劲"出发，
+    直接把 booking_id 粘进来，就能拿到它的完整轨迹（R07 验收口径）。
+    """
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    qp = request.query_params
+    target_type = qp.get("target_type") or None
+    target_id = qp.get("target_id") or None
+    action = qp.get("action") or None
+
+    rows = await db.list_op_logs(
+        target_type=target_type if target_type in ("booking", "device", "user") else None,
+        target_id=target_id.strip() if target_id and target_id.strip() else None,
+        action=action.strip() if action and action.strip() else None,
+        limit=300,
+    )
+    for row in rows:
+        row["brief"] = _diff_brief(row.get("before_json"), row.get("after_json"))
+        row["action_label"] = _ACTION_LABELS.get(row.get("action"), row.get("action") or "—")
+
+    return render(
+        request,
+        "admin_logs.html",
+        {
+            "user": user,
+            "logs": rows,
+            "filters": {"target_type": target_type or "", "target_id": target_id or "", "action": action or ""},
+        },
+    )

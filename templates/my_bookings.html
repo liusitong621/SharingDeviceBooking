@@ -47,10 +47,21 @@
             <button type="submit" class="btn sm danger">取消</button>
           </form>
           {% elif b.status == 'picked' %}
-          <form method="post" action="/bookings/{{ b.id }}/return" style="display:inline">
-            <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <button type="submit" class="btn sm">登记归还</button>
-          </form>
+          {# 归还的两个字段都选填：只点确认也必须能成功。
+             强制填表只会让人随手打个"无"，等于没记。 #}
+          <details class="ret">
+            <summary class="btn sm">登记归还</summary>
+            <form method="post" action="/bookings/{{ b.id }}/return">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <label>实际归还时间
+                <input type="datetime-local" name="returned_at" value="{{ now_input }}">
+              </label>
+              <label>设备状况
+                <input type="text" name="remark" maxlength="200" placeholder="例：外壳有划痕（选填）">
+              </label>
+              <button type="submit" class="btn sm primary">确认归还</button>
+            </form>
+          </details>
           {% else %}
           <span style="color:var(--muted)">—</span>
           {% endif %}

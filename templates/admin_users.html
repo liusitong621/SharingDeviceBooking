@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}账号管理{% endblock %}
+{% block heading %}账号管理{% endblock %}
+{% block subheading %}停用即时生效 · 重复导入不会重置已有账号的密码{% endblock %}
+
+{% block body %}
+{% if error %}
+<div class="card" style="border-color:var(--danger);margin-bottom:16px">
+  <div class="card-bd" style="color:var(--danger);white-space:pre-wrap">{{ error }}</div>
+</div>
+{% endif %}
+{% if notice %}
+<div class="card" style="border-color:var(--ok);margin-bottom:16px">
+  <div class="card-bd" style="color:var(--ink-2)">{{ notice }}</div>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-hd">
+    <h2>批量导入</h2>
+    <span class="badge mute">CSV / Excel 直接粘贴</span>
+  </div>
+  <div class="card-bd">
+    <form method="post" action="/admin/users/import">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <textarea name="roster" rows="6" spellcheck="false"
+                placeholder="工号,姓名,部门,初始密码&#10;1003,王芳,研发一部,Staff@12345&#10;1004,刘洋,测试部&#10;2001,陈静,制造部,Init@2026"
+                style="width:100%;font-family:var(--mono,monospace);font-size:13px;padding:10px;line-height:1.6"></textarea>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:16px">
+        <div style="color:var(--muted);font-size:12.5px;line-height:1.6">
+          一行一个员工，逗号或 Tab 分隔。初始密码可省略，省略时用
+          <span class="mono">{{ default_password }}</span>；导入后首次登录强制改密。<br>
+          工号已存在则<strong style="color:var(--ink-2)">跳过且不改密码</strong>——重复导入全量名单是安全的。
+        </div>
+        <button type="submit" class="btn primary" style="white-space:nowrap">导入</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-hd">
+    <h2>账号列表</h2>
+    <span class="badge mute">{{ users|length }} 个</span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:110px">工号</th>
+        <th>姓名 / 部门</th>
+        <th style="width:80px">角色</th>
+        <th style="width:90px">状态</th>
+        <th style="width:150px">最近登录</th>
+        <th style="width:250px" class="num">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td class="mono">{{ u.emp_no }}</td>
+        <td>
+          <strong>{{ u.name }}</strong>
+          <div style="color:var(--muted);font-size:12px">{{ u.dept or '未分配部门' }}</div>
+        </td>
+        <td>
+          {% if u.role == 'admin' %}<span class="badge brand">管理员</span>
+          {% else %}<span class="badge mute">员工</span>{% endif %}
+        </td>
+        <td>
+          {% if u.status == 'active' %}<span class="badge ok">启用</span>
+          {% else %}<span class="badge danger">停用</span>{% endif %}
+          {% if u.must_change_pwd %}<div style="color:var(--muted);font-size:11px;margin-top:2px">待首次改密</div>{% endif %}
+        </td>
+        <td class="mono" style="color:var(--muted);font-size:12px">{{ u.last_login_at or '从未登录' }}</td>
+        <td class="num">
+          {% if u.id != user.id %}
+          <form method="post" action="/admin/users/{{ u.id }}/status" style="display:inline">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            {% if u.status == 'active' %}
+            <input type="hidden" name="status" value="disabled">
+            <button type="submit" class="btn sm danger">停用</button>
+            {% else %}
+            <input type="hidden" name="status" value="active">
+            <button type="submit" class="btn sm">启用</button>
+            {% endif %}
+          </form>
+          <form method="post" action="/admin/users/{{ u.id }}/reset" style="display:inline"
+                onsubmit="return confirm('把 {{ u.emp_no }} 的密码重置为初始密码？对方下次登录必须改密。')">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button type="submit" class="btn sm">重置密码</button>
+          </form>
+          {% else %}
+          <span style="color:var(--muted);font-size:12px">当前登录账号</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-bd" style="color:var(--muted);font-size:13px">
+    <strong style="color:var(--ink-2)">停用之后会发生什么：</strong>
+    账号立刻无法登录，已登录的会话在下一次请求时失效（权限每次回库查，不信 token）。
+    名下未完成的预约<strong style="color:var(--ink-2)">不会自动释放</strong>——
+    那些格子仍被别人看到"已占用"。停用后请到
+    <a href="/admin/overdue">超期与未取</a> 里处置，处置动作会留痕。
+  </div>
+</div>
+{% endblock %}

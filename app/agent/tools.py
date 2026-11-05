@@ -350,7 +350,9 @@ async def find_available_slots(ctx: ToolContext, args: dict[str, Any]) -> ToolRe
         )
 
     asset_no = _str_arg(args, "asset_no")
-    payload = await booking_service.list_devices_with_availability(date)
+    # 传当前用户 id：模型替用户查空档时，也要能看到"哪几格是这个人自己占的"，
+    # 否则它会把用户自己的单当成别人的冲突，建议用户去约别的时段。
+    payload = await booking_service.list_devices_with_availability(date, ctx.user["id"])
 
     devices: list[dict[str, Any]] = []
     for d in payload["devices"]:

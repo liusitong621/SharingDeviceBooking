@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}设备空档{% endblock %}
+{% block heading %}设备空档{% endblock %}
+{% block subheading %}{{ date }} · 点空格即可预约，点完立刻生效{% endblock %}
+
+{% block actions %}
+<a class="btn" href="/bookings">我的预约</a>
+{% endblock %}
+
+{% block body %}
+{% if error %}
+<div class="card" style="border-color:var(--danger);margin-bottom:16px">
+  <div class="card-bd" style="color:var(--danger)">{{ error }}</div>
+</div>
+{% endif %}
+{% if notice %}
+<div class="card" style="border-color:var(--ok);margin-bottom:16px">
+  <div class="card-bd" style="color:var(--ok)">{{ notice }}</div>
+</div>
+{% endif %}
+
+{# 日期选择用链接而不是 <input type="date">：
+   链接的每一个状态都有 URL，可以直接收藏"下周三的占用情况"发给同事。
+   原生日期控件做不到这一点，而且它的样式在各浏览器里完全不统一。 #}
+<div class="card">
+  <div class="card-bd" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <span style="color:var(--muted);font-size:12.5px;margin-right:4px">选择日期</span>
+    {% for d in days %}
+    <a class="btn sm {% if d == date %}primary{% endif %}" href="/devices?date={{ d }}">
+      {% if d == today %}今天{% else %}{{ d[5:] }}{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{% for d in devices %}
+<div class="card" style="margin-top:14px">
+  <div class="card-hd">
+    <h2>
+      <span class="mono">{{ d.asset_no }}</span>
+      {{ d.name }}
+      {% if d.status == 'offline' %}<span class="badge danger">已下架</span>
+      {% elif d.status == 'borrowed' %}<span class="badge brand">借出中</span>
+      {% endif %}
+    </h2>
+    <span class="badge {{ 'ok' if d.free_count else 'mute' }}">空闲 {{ d.free_count }} 格</span>
+  </div>
+  <div class="card-bd">
+    <div style="color:var(--muted);font-size:12.5px;margin-bottom:10px">
+      {{ d.model or '—' }} · {{ d.location or '未登记位置' }}
+    </div>
+    <div class="slot-grid">
+      {% for s in d.slots %}
+      {% if s.state == 'free' %}
+      <form method="post" action="/bookings/new" class="slot-cell">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <input type="hidden" name="device_id" value="{{ d.id }}">
+        <input type="hidden" name="slot_date" value="{{ date }}">
+        <input type="hidden" name="slot_start" value="{{ s.start }}">
+        <input type="hidden" name="back" value="/devices?date={{ date }}">
+        <button type="submit" class="slot-btn free" title="点击预约 {{ s.start }}–{{ s.end }}">
+          <b>{{ s.start }}</b><span>{{ s.end }}</span><em>可约</em>
+        </button>
+      </form>
+      {% else %}
+      <div class="slot-cell">
+        <div class="slot-btn {{ s.state }}">
+          <b>{{ s.start }}</b><span>{{ s.end }}</span>
+          <em>
+            {% if s.state == 'mine' %}我的
+            {% elif s.state == 'taken' %}已约
+            {% elif s.state == 'passed' %}已过
+            {% else %}下架{% endif %}
+          </em>
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-bd" style="color:var(--muted);font-size:13px">
+    <strong style="color:var(--ink-2)">三种颜色分别是什么：</strong>
+    绿色是可约，蓝色是<strong style="color:var(--ink-2)">你自己约的</strong>，
+    红色是别人占了。今天已经开始的格子显示为灰色——时段一开始就不再放出来，
+    避免有人约到只剩半小时的残格、到场却撞上正在用的人。
+  </div>
+</div>
+{% endblock %}

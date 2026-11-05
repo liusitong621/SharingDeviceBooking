@@ -4,7 +4,79 @@
 {% block subheading %}下架后该设备立刻不可预约，已生效的预约不受影响{% endblock %}
 
 {% block body %}
+{% if error %}
+<div class="card" style="border-color:var(--danger);margin-bottom:16px">
+  <div class="card-bd" style="color:var(--danger)">{{ error }}</div>
+</div>
+{% endif %}
+
+{# 新增与编辑共用一个表单：字段完全一样，分成两套只会让两边慢慢长歪。 #}
 <div class="card">
+  <div class="card-hd">
+    <h2>{% if edit_device %}编辑设备 · {{ edit_device.asset_no }}{% else %}新增设备{% endif %}</h2>
+    {% if edit_device %}
+    <a href="/admin/devices" class="btn sm">取消编辑</a>
+    {% endif %}
+  </div>
+  <div class="card-bd">
+    <form method="post"
+          action="{% if edit_device %}/admin/devices/{{ edit_device.id }}/edit{% else %}/admin/devices{% endif %}"
+          style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:end">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+
+      <label class="field">
+        <span>资产编号 *</span>
+        <input type="text" name="asset_no" maxlength="40" required
+               value="{% if edit_device %}{{ edit_device.asset_no }}{% else %}{{ form.asset_no or '' }}{% endif %}"
+               placeholder="EQ-0004" class="mono">
+      </label>
+
+      <label class="field">
+        <span>设备名称 *</span>
+        <input type="text" name="name" maxlength="60" required
+               value="{% if edit_device %}{{ edit_device.name }}{% else %}{{ form.name or '' }}{% endif %}"
+               placeholder="手持频谱分析仪">
+      </label>
+
+      <label class="field">
+        <span>型号</span>
+        <input type="text" name="model" maxlength="80"
+               value="{% if edit_device %}{{ edit_device.model or '' }}{% else %}{{ form.model or '' }}{% endif %}"
+               placeholder="Keysight N9340B">
+      </label>
+
+      <label class="field">
+        <span>存放位置</span>
+        <input type="text" name="location" maxlength="80"
+               value="{% if edit_device %}{{ edit_device.location or '' }}{% else %}{{ form.location or '' }}{% endif %}"
+               placeholder="A 座 3 层仪器间">
+      </label>
+
+      <label class="field">
+        <span>状态</span>
+        <select name="status">
+          {% set cur_status = edit_device.status if edit_device else 'available' %}
+          <option value="available" {% if cur_status == 'available' %}selected{% endif %}>可借</option>
+          <option value="borrowed" {% if cur_status == 'borrowed' %}selected{% endif %}>借出中</option>
+          <option value="offline" {% if cur_status == 'offline' %}selected{% endif %}>已下架</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>备注</span>
+        <input type="text" name="note" maxlength="200"
+               value="{% if edit_device %}{{ edit_device.note or '' }}{% else %}{{ form.note or '' }}{% endif %}"
+               placeholder="可选">
+      </label>
+
+      <div style="grid-column:1/-1;display:flex;gap:8px">
+        <button type="submit" class="btn primary">{% if edit_device %}保存修改{% else %}新增{% endif %}</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
   {% if devices %}
   <table>
     <thead>
@@ -14,7 +86,7 @@
         <th style="width:150px">位置</th>
         <th style="width:88px">状态</th>
         <th style="width:250px">今日时段</th>
-        <th style="width:96px" class="num">操作</th>
+        <th style="width:210px" class="num">操作</th>
       </tr>
     </thead>
     <tbody>
@@ -40,7 +112,7 @@
           <div style="color:var(--muted);font-size:11.5px;margin-top:4px">空闲 {{ d.free_count }} 格</div>
         </td>
         <td class="num">
-          <form method="post" action="/admin/devices/{{ d.id }}/status" style="margin:0">
+          <form method="post" action="/admin/devices/{{ d.id }}/status" style="display:inline">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             {% if d.status == 'offline' %}
             <input type="hidden" name="status" value="available">
@@ -50,22 +122,28 @@
             <button type="submit" class="btn sm danger">下架</button>
             {% endif %}
           </form>
+          <a class="btn sm" href="/admin/devices?edit={{ d.id }}">编辑</a>
+          <form method="post" action="/admin/devices/{{ d.id }}/delete" style="display:inline"
+                onsubmit="return confirm('删除 {{ d.asset_no }}？历史预约与日志会保留，但这台设备将不再出现在台账里。')">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button type="submit" class="btn sm danger">删除</button>
+          </form>
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
   {% else %}
-  <div class="empty">还没有设备。设备台账可通过导入脚本批量写入。</div>
+  <div class="empty">还没有设备。用上面的表单新增第一台。</div>
   {% endif %}
 </div>
 
 <div class="card" style="margin-top:16px">
   <div class="card-bd" style="color:var(--muted);font-size:13px">
-    <strong style="color:var(--ink-2)">为什么"下架"不改预约：</strong>
-    设备状态（可借/借出/下架）和预约占用状态是两条独立的线。
-    下架只拦截<em>新的</em>预约，已经约好的单仍需人工通知——这属于人和人的协调，
-    系统不该替用户擅自取消别人的预约。
+    <strong style="color:var(--ink-2)">两条刻意的规则：</strong>
+    ① 「下架」只拦截<em>新的</em>预约，已约好的单不动——取消别人的预约是人和人的协调，系统不替用户做。
+    ② 「删除」是<em>从台账消失</em>而不是从数据库消失。设备名是历史预约轨迹的一部分，
+    物理删除会让那条轨迹读不懂，所以只打标记；有未完成预约时也不允许删除。
   </div>
 </div>
 {% endblock %}

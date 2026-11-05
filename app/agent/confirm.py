@@ -176,6 +176,9 @@ async def _do_request_booking(p: dict[str, Any], user: dict[str, Any]) -> dict[s
         device_id=v["device_id"],
         slot_date=v["slot_date"],
         slot_starts=v["slot_starts"],
+        # actor 必须传 user 而不是只传 user_id：留痕要记"谁点的确认"，
+        # 而这一步是全系统唯一的写执行点（模型发起的请求，人点的按钮）。
+        actor=user,
     )
 
     summary = p["summary"]

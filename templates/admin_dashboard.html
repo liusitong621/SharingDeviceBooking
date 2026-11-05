@@ -23,6 +23,32 @@
   </div>
 </div>
 
+{# 这两个数字放在最上面第二排，是刻意的排序：
+   A 方案没有审批、没有信用，「约满没人用」只能靠人处置。
+   管理员上班第一眼该看到的是"有几条等我处理"，而不是"一共有多少单"。 #}
+<div class="grid-4" style="margin-top:12px">
+  <a class="stat {% if stats.awaiting_pickup %}attention{% endif %}" href="/admin/overdue" style="text-decoration:none">
+    <div class="k">已开始 · 未登记取走</div>
+    <div class="v">{{ stats.awaiting_pickup }}<small>条</small></div>
+    <div class="hint">去处置 →</div>
+  </a>
+  <a class="stat {% if stats.not_returned %}attention{% endif %}" href="/admin/overdue" style="text-decoration:none">
+    <div class="k">已取走 · 未归还</div>
+    <div class="v">{{ stats.not_returned }}<small>条</small></div>
+    <div class="hint">去处置 →</div>
+  </a>
+  <a class="stat" href="/admin/devices" style="text-decoration:none">
+    <div class="k">设备台账</div>
+    <div class="v">{{ stats.devices }}<small>台</small></div>
+    <div class="hint">新增 / 编辑 →</div>
+  </a>
+  <a class="stat" href="/admin/users" style="text-decoration:none">
+    <div class="k">员工账号</div>
+    <div class="v">{{ stats.users }}<small>个</small></div>
+    <div class="hint">停用 {{ stats.users_disabled }} 个 →</div>
+  </a>
+</div>
+
 <div class="card">
   <div class="card-hd">
     <h2>当前可用范围</h2>
@@ -48,9 +74,24 @@
         <td>6 格时段、单日 2 格上限、冲突返回 409、过期自动释放</td>
       </tr>
       <tr>
-        <td>设备上下架</td>
+        <td>设备台账（新增 / 编辑 / 上下架）</td>
         <td><span class="badge ok">已上线</span></td>
-        <td>设备坏了立刻从可约池摘掉，不影响已生效的预约</td>
+        <td>设备坏了立刻从可约池摘掉，不影响已生效的预约；有未完成预约时不允许删除</td>
+      </tr>
+      <tr>
+        <td>超期与未取处置</td>
+        <td><span class="badge ok">已上线</span></td>
+        <td>「已开始未登记」「已取未还」两个清单 + 强制结束，处置写日志</td>
+      </tr>
+      <tr>
+        <td>操作留痕</td>
+        <td><span class="badge ok">已上线</span></td>
+        <td>与业务变更同事务写入；可按预约/设备/账号回放完整轨迹，无删除入口</td>
+      </tr>
+      <tr>
+        <td>账号管理</td>
+        <td><span class="badge ok">已上线</span></td>
+        <td>批量导入（重复工号跳过）、停用即时生效、重置密码强制改密</td>
       </tr>
       <tr>
         <td>制度知识库管理</td>

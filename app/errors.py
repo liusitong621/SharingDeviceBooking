@@ -54,11 +54,16 @@ ERROR_TABLE: dict[str, tuple[int, str]] = {
     "DATE_IN_PAST": (400, "不能预约已经过去的时段"),
     "DEVICE_NOT_FOUND": (404, "设备不存在"),
     "DEVICE_OFFLINE": (409, "该设备已下架，暂不可预约"),
+    "DEVICE_EXISTS": (409, "该资产编号已被占用"),
+    "DEVICE_HAS_ACTIVE_BOOKINGS": (409, "该设备还有未完成的预约，不能删除"),
     "SLOT_TAKEN": (409, "该时段已被预约，请换一个时段"),
     "QUOTA_EXCEEDED": (409, "已达到单日预约上限（2 格）"),
     "BOOKING_NOT_FOUND": (404, "预约不存在"),
     "BOOKING_FORBIDDEN": (403, "只能操作自己的预约"),
     "BOOKING_STATE_INVALID": (409, "当前状态下不能执行该操作"),
+    "INVALID_RETURN_TIME": (400, "归还时间不合法"),
+    # --- 账号管理（R08）---
+    "USER_NOT_FOUND": (404, "账号不存在"),
     # --- 智能体校验凭证（T5 → T6）---
     "VALIDATION_REQUIRED": (400, "请先校验时段再发起预约"),
     "VALIDATION_NOT_FOUND": (404, "校验凭证不存在，请重新校验时段"),

@@ -84,21 +84,40 @@ def check_date(value: str, now: datetime, window_days: int = BOOKING_WINDOW_DAYS
     return True, ""
 
 
-def slot_states(slot_date: str, booked: set[str], device_status: str, now: datetime) -> list[dict]:
+def slot_states(
+    slot_date: str,
+    booked: dict[str, str] | set[str],
+    device_status: str,
+    now: datetime,
+    me_id: str | None = None,
+) -> list[dict]:
     """
     组装某设备某天的 6 格状态，供前端/工具直接展示。
 
     state 取值：
       free     可约
-      taken    已被约（booked 集合来自数据库）
+      mine     是我自己约的（R02 验收要求的一态）
+      taken    已被别人约（booked 提供者）
       passed   今天已过去的格子（展示但不可点）
       offline  设备下架，整列都不可约
+
+    booked 兼容两种形态：{slot_start: user_id} 与纯 set。
+    为什么要兼容而不是一刀切改成 dict：preflight 与 place_booking 只需要
+    "被占没被占"，构造一个假 dict 反而多一层噪声；而展示层需要区分"我的"，
+    少传 user_id 就等于把这一态弄丢。让类型适配调用方，而不是反过来。
+
+    mine 的判定放在 passed **之前**：我约了 10:00–12:00，10:30 打开页面，
+    更该看到"这是我的预约，去取设备"，而不是"时段已开始"。
+    两种状态下格子都不可再约，不影响任何校验逻辑。
     """
     d = parse_date(slot_date)
     states: list[dict] = []
     for start, end in SLOTS:
+        owner = booked.get(start) if isinstance(booked, dict) else None
         if device_status == "offline":
             state, reason = "offline", "设备已下架"
+        elif me_id and owner is not None and str(owner) == str(me_id):
+            state, reason = "mine", "我的预约"
         elif d is not None and d == now.date() and _slot_started(start, now):
             state, reason = "passed", "时段已开始"
         elif start in booked:
