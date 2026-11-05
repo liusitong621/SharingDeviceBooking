@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f2ed">
   <title>设备借用助手 · 制度问答</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -11,15 +12,15 @@
     <!-- 侧栏：品牌 + 新建对话 + 运行状态。状态从 /health 取，不用前端猜 -->
     <aside class="sidebar">
       <div class="brand">
-        <div class="logo">借</div>
+        <div class="logo" aria-hidden="true">借</div>
         <div class="brand-text">
           <strong>设备借用助手</strong>
-          <small>制度问答 · MVP</small>
+          <small>制度问答</small>
         </div>
       </div>
 
       <button id="new-chat" class="btn-new" type="button">
-        <span>＋</span> 新建对话
+        <span aria-hidden="true">＋</span> 新建对话
       </button>
 
       <div class="side-info">
@@ -47,7 +48,7 @@
     </aside>
 
     <!-- 主区 -->
-    <main class="main">
+    <main class="main" id="main">
       <header class="topbar">
         <div class="titles">
           <h1>制度问答</h1>
@@ -56,11 +57,11 @@
         <span class="tag" id="degraded-badge" hidden>降级模式</span>
       </header>
 
-      <div class="messages" id="messages">
-        <!-- 空态：给三个可直接点击的示例问题，降低首次使用门槛 -->
+      <div class="messages" id="messages" role="log" aria-live="polite" aria-label="对话记录">
+        <!-- 空态：给四个可直接点击的示例问题，降低首次使用门槛 -->
         <div class="empty" id="empty-state">
           <h2>问点什么</h2>
-          <p>下面的问题可以直接点：</p>
+          <p>以下问题可以直接点，也可以自己输入</p>
           <div class="samples">
             <button class="sample" type="button">每天最多可以预约几格？</button>
             <button class="sample" type="button">取消预约后别人能马上约同一格吗？</button>
@@ -71,18 +72,19 @@
       </div>
 
       <div class="composer">
-        <div class="status-line" id="status-line" hidden>
-          <span class="spinner"></span><span id="status-text">正在检索制度…</span>
+        <div class="status-line" id="status-line" hidden role="status">
+          <span class="spinner" aria-hidden="true"></span><span id="status-text">正在检索制度…</span>
         </div>
 
         <form id="form">
-          <textarea id="input" rows="1" maxlength="500"
-                    placeholder="输入你的问题，Enter 发送，Shift + Enter 换行"></textarea>
+          <textarea id="input" rows="1" maxlength="500" aria-label="输入问题"
+                    placeholder="输入你的问题，Enter 发送"></textarea>
           <button id="send" class="send" type="submit">发送</button>
         </form>
 
         <div class="hint">
           <span id="counter">0 / 500</span>
+          <span class="hint-key">Enter 发送 · Shift + Enter 换行</span>
           <span>回答附引用来源，点开可核对原文</span>
         </div>
       </div>

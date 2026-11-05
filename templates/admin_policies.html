@@ -118,7 +118,7 @@
         </td>
         <td class="num mono">{{ d.chunks }}</td>
         <td class="num mono" style="color:var(--muted)">{{ (d.size_bytes / 1024) | round(1) }} KB</td>
-        <td class="mono" style="color:var(--muted);font-size:12px">{{ d.file_mtime or '—' }}</td>
+        <td class="mono nowrap" style="color:var(--muted);font-size:12px">{{ (d.file_mtime or '')[:16].replace('T', ' ') or '—' }}</td>
         <td class="num">
           {% if d.on_disk %}
           <a class="btn sm" href="/admin/policies?preview={{ d.doc_key | urlencode }}">切片</a>

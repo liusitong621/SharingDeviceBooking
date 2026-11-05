@@ -110,7 +110,7 @@
         <td class="num mono" style="font-size:12px">
           {{ r.step_count }}{% if r.error_steps %}<span style="color:var(--danger)">（{{ r.error_steps }} 失败）</span>{% endif %}
         </td>
-        <td class="mono" style="font-size:11px;color:var(--muted)">{{ (r.model or '—')[:12] }}</td>
+        <td class="mono nowrap" style="font-size:11px;color:var(--muted)" title="{{ r.model or '内置配置' }}">{{ (r.model or '—')[:12] }}</td>
         <td class="num mono" style="font-size:12px">
           {% if r.prompt_version %}v{{ r.prompt_version }}{% else %}<span style="color:var(--muted)">内置</span>{% endif %}
         </td>

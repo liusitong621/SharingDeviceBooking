@@ -1,39 +1,43 @@
-{# 后台基础布局：左侧导航 + 右侧内容。
+{# 后台基础布局：左侧目录 + 右侧内容。
    导航里标注「待上线」的条目是刻意保留的：管理员知道后面会有这些功能，
-   比点进去看到 404 要好。 #}
+   比点进去看到 404 要好。
+   目录前的编号不是为了好看——长目录里"第几项"比"图标长什么样"更好记，
+   也让这套界面有点正式文件的样子。 #}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f2ed">
   <title>{% block title %}管理后台{% endblock %} · 设备借用</title>
   <link rel="stylesheet" href="/static/admin.css">
 </head>
 <body>
+<a class="skip" href="#main">跳到主要内容</a>
 <div class="shell">
   <aside class="side">
     <div class="brand">
-      <div class="logo">借</div>
+      <div class="logo" aria-hidden="true">借</div>
       <div class="brand-text">
         <strong>设备借用</strong>
         <small>管理后台</small>
       </div>
     </div>
 
-    <nav class="nav">
-      <a href="/admin" class="{% if current_path == '/admin' %}on{% endif %}">概览</a>
-      <a href="/admin/devices" class="{% if current_path.startswith('/admin/devices') %}on{% endif %}">设备台账</a>
-      <a href="/admin/overdue" class="{% if current_path.startswith('/admin/overdue') %}on{% endif %}">超期与未取</a>
-      <a href="/admin/users" class="{% if current_path.startswith('/admin/users') %}on{% endif %}">账号管理</a>
-      <a href="/admin/logs" class="{% if current_path.startswith('/admin/logs') %}on{% endif %}">操作日志</a>
-      <div class="sep"></div>
-      <a href="/admin/policies" class="{% if current_path.startswith('/admin/policies') %}on{% endif %}">制度知识库</a>
-      <a href="/admin/prompts" class="{% if current_path.startswith('/admin/prompts') %}on{% endif %}">提示词模板</a>
-      <a href="/admin/audit" class="{% if current_path.startswith('/admin/audit') %}on{% endif %}">对话审计</a>
-      <div class="sep"></div>
-      <a href="/">问答助手</a>
-      <a href="/devices" class="{% if current_path == '/devices' %}on{% endif %}">设备空档</a>
-      <a href="/bookings" class="{% if current_path == '/bookings' %}on{% endif %}">我的预约</a>
+    <nav class="nav" aria-label="后台导航">
+      <a href="/admin" {% if current_path == '/admin' %}class="on" aria-current="page"{% endif %}><span class="n">01</span>概览</a>
+      <a href="/admin/devices" {% if current_path.startswith('/admin/devices') %}class="on" aria-current="page"{% endif %}><span class="n">02</span>设备台账</a>
+      <a href="/admin/overdue" {% if current_path.startswith('/admin/overdue') %}class="on" aria-current="page"{% endif %}><span class="n">03</span>超期与未取</a>
+      <a href="/admin/users" {% if current_path.startswith('/admin/users') %}class="on" aria-current="page"{% endif %}><span class="n">04</span>账号管理</a>
+      <a href="/admin/logs" {% if current_path.startswith('/admin/logs') %}class="on" aria-current="page"{% endif %}><span class="n">05</span>操作日志</a>
+      <div class="sep" role="presentation"></div>
+      <a href="/admin/policies" {% if current_path.startswith('/admin/policies') %}class="on" aria-current="page"{% endif %}><span class="n">06</span>制度知识库</a>
+      <a href="/admin/prompts" {% if current_path.startswith('/admin/prompts') %}class="on" aria-current="page"{% endif %}><span class="n">07</span>提示词模板</a>
+      <a href="/admin/audit" {% if current_path.startswith('/admin/audit') %}class="on" aria-current="page"{% endif %}><span class="n">08</span>对话审计</a>
+      <div class="sep" role="presentation"></div>
+      <a href="/"><span class="n">09</span>问答助手</a>
+      <a href="/devices" {% if current_path == '/devices' %}class="on" aria-current="page"{% endif %}><span class="n">10</span>设备空档</a>
+      <a href="/bookings" {% if current_path == '/bookings' %}class="on" aria-current="page"{% endif %}><span class="n">11</span>我的预约</a>
     </nav>
 
     <div class="side-foot">
@@ -48,7 +52,7 @@
     </div>
   </aside>
 
-  <main class="content">
+  <main class="content" id="main">
     <header class="topbar">
       <div>
         <h1>{% block heading %}{% endblock %}</h1>
