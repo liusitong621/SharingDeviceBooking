@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}对话审计{% endblock %}
+{% block heading %}对话审计{% endblock %}
+{% block subheading %}看模型做了什么，不只是它说了什么 · 最近 100 条{% endblock %}
+
+{% block body %}
+{# 统计卡放最上面：管理员打开这一页，第一个问题一定是"最近有没有异常"，
+   而不是"昨天那个人问了啥"。先给全景，再给明细。 #}
+<div class="grid-4">
+  <div class="stat">
+    <div class="k">近 {{ summary.days }} 天提问</div>
+    <div class="v">{{ summary.total }}<small>次</small></div>
+    <div class="hint">工具调用 {{ summary.steps }} 次 · 失败 {{ summary.step_errors }} 次</div>
+  </div>
+  <div class="stat {% if summary.awaiting_confirm %}attention{% endif %}">
+    <div class="k">写操作被拦下</div>
+    <div class="v">{{ summary.awaiting_confirm }}<small>次</small></div>
+    <div class="hint">模型想直接落单，等人点确认</div>
+  </div>
+  <div class="stat {% if summary.failed or summary.max_rounds %}attention{% endif %}">
+    <div class="k">失败 / 轮次超限</div>
+    <div class="v">{{ summary.failed }} / {{ summary.max_rounds }}</div>
+    <div class="hint">平均 {{ summary.avg_rounds }} 轮 · {{ (summary.avg_ms / 1000) | round(1) }}s</div>
+  </div>
+  <div class="stat {% if summary.flagged %}attention{% endif %}">
+    <div class="k">已标记跟进</div>
+    <div class="v">{{ summary.flagged }}<small>条</small></div>
+    <div class="hint"><a href="/admin/audit?flagged=1">只看标记</a></div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-bd">
+    <form method="get" action="/admin/audit" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <label class="f">
+        员工 / 关键词
+        <input type="text" name="q" value="{{ filters.keyword }}" placeholder="工号、姓名，或问题里的词">
+      </label>
+      <label class="f">
+        状态
+        <select name="status">
+          <option value="">全部</option>
+          <option value="answered" {% if filters.status == 'answered' %}selected{% endif %}>已回答</option>
+          <option value="awaiting_confirm" {% if filters.status == 'awaiting_confirm' %}selected{% endif %}>待确认（有写意图）</option>
+          <option value="failed" {% if filters.status == 'failed' %}selected{% endif %}>失败</option>
+          <option value="max_rounds" {% if filters.status == 'max_rounds' %}selected{% endif %}>轮次超限</option>
+        </select>
+      </label>
+      <label class="f">
+        起
+        <input type="date" name="from" value="{{ filters.date_from }}">
+      </label>
+      <label class="f">
+        止
+        <input type="date" name="to" value="{{ filters.date_to }}">
+      </label>
+      <label class="f" style="flex-direction:row;align-items:center;gap:6px;padding-bottom:8px">
+        <input type="checkbox" name="flagged" value="1" {% if filters.only_flagged %}checked{% endif %}>
+        只看已标记
+      </label>
+      <button type="submit" class="btn primary">筛选</button>
+      <a href="/admin/audit" class="btn">清空</a>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  {% if runs %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width:130px">时间</th>
+        <th style="width:110px">员工</th>
+        <th>问题</th>
+        <th style="width:110px">状态</th>
+        <th style="width:70px" class="num">轮数</th>
+        <th style="width:80px" class="num">耗时</th>
+        <th style="width:90px" class="num">工具</th>
+        <th style="width:70px">模型</th>
+        <th style="width:60px" class="num">版本</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in runs %}
+      <tr>
+        <td class="mono" style="color:var(--muted);font-size:11.5px">
+          {{ r.created_at[:16].replace('T', ' ') }}
+          {% if r.flag_reason %}<div><span class="badge warn">已标记</span></div>{% endif %}
+        </td>
+        <td>
+          <div class="mono" style="font-size:12.5px">{{ r.emp_no or '—' }}</div>
+          <div style="color:var(--muted);font-size:11.5px">{{ r.user_name or '未知用户' }}</div>
+        </td>
+        <td>
+          <a href="/admin/audit/{{ r.id }}" style="color:var(--ink);text-decoration:none">
+            {{ r.question[:64] }}{% if r.question|length > 64 %}…{% endif %}
+          </a>
+          {% if r.flag_reason %}
+          <div style="color:var(--warn);font-size:11.5px;margin-top:2px">标记：{{ r.flag_reason }}</div>
+          {% endif %}
+        </td>
+        <td>
+          <span class="badge {{ r.status_tone }}">{{ r.status_label }}</span>
+          {% if r.pending_count %}
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">{{ r.pending_count }} 条写意图</div>
+          {% endif %}
+        </td>
+        <td class="num mono">{{ r.rounds or 0 }}</td>
+        <td class="num mono" style="font-size:12px">{{ r.elapsed_text }}</td>
+        <td class="num mono" style="font-size:12px">
+          {{ r.step_count }}{% if r.error_steps %}<span style="color:var(--danger)">（{{ r.error_steps }} 失败）</span>{% endif %}
+        </td>
+        <td class="mono" style="font-size:11px;color:var(--muted)">{{ (r.model or '—')[:12] }}</td>
+        <td class="num mono" style="font-size:12px">
+          {% if r.prompt_version %}v{{ r.prompt_version }}{% else %}<span style="color:var(--muted)">内置</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">
+    没有匹配的对话记录。<br>
+    未配置大模型密钥时对话走降级路径（检索直出），**不会产生运行轨迹**——
+    这一页为空是正常的，配好模型后再问几句就有数据了。
+  </div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-bd" style="color:var(--muted);font-size:13px;line-height:1.8">
+    <strong style="color:var(--ink-2)">和「操作日志」的区别：</strong>
+    操作日志记的是<strong style="color:var(--ink-2)">人</strong>对系统做了什么（谁取消了谁的预约）；
+    这一页记的是<strong style="color:var(--ink-2)">模型</strong>对系统做了什么（问了什么、调了什么工具、有没有被拦下）。
+    前者用于追责，后者用于复盘。合并成一张表，两边都会被对方的噪音淹没。
+  </div>
+</div>
+{% endblock %}

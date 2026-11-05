@@ -19,7 +19,7 @@ import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -303,6 +303,27 @@ CREATE TABLE IF NOT EXISTS prompt_templates (
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_version ON prompt_templates(tpl_key, version);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_active  ON prompt_templates(tpl_key) WHERE status = 'active';
+
+-- ===========================================================================
+-- 审计标记（批次 4）
+-- ---------------------------------------------------------------------------
+-- 管理员看对话审计时，遇到"这句话不对劲、要跟进"的，需要留个记号。
+--
+-- 为什么单独一张表而不是给 agent_runs 加三列：
+--   agent_runs 是**机器产生的事实**，写进去就不该再改；标记是**人的判断**，
+--   会改、会撤、会换理由。混在一张表里，以后就没法回答"这行到底哪些是
+--   当时的原始数据"。分开存，轨迹永远干净。
+--
+-- 为什么主键是 run_id 而不是自增 id：
+--   一次运行只该有一个当前标记。要不要保留历史标记，交给 op_logs——
+--   那里本来就记着"谁在什么时候标了什么、什么时候撤了"。
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS audit_flags (
+    run_id     TEXT PRIMARY KEY REFERENCES agent_runs(id) ON DELETE CASCADE,
+    reason     TEXT NOT NULL,
+    flagged_by TEXT,
+    flagged_at TEXT NOT NULL
+);
 """
 
 
@@ -1983,6 +2004,252 @@ async def list_steps(run_id: str) -> list[dict[str, Any]]:
                 (run_id,),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    return await asyncio.to_thread(_run)
+
+
+# =============================================================================
+# 对话审计（批次 4）
+# -----------------------------------------------------------------------------
+# 这一页要回答的不是"系统运行得好不好"，而是三个具体到人的问题：
+#
+#   1) 谁在什么时候问了什么？（追责的起点）
+#   2) 模型有没有试图写库，人最后点没点确认？（这是审计的核心，不是聊天记录）
+#   3) 出问题那句话，模型当时调了什么工具、拿到什么回执？（复盘的依据）
+#
+# 所以查询一律从 agent_runs 出发，而不是从 chat_messages。
+# 聊天记录只回答"说了什么"，回答不了"做了什么"。
+# =============================================================================
+
+
+async def list_runs(
+    *,
+    keyword: str | None = None,
+    status: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    only_flagged: bool = False,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """
+    审计列表。
+
+    三个统计列用关联子查询而不是 JOIN + GROUP BY：
+    agent_steps 一个 run 可能有十几行，JOIN 后再聚合会让 LIMIT 语义
+    变成"先乘出来再截断"，翻页时数量对不上。子查询只算一次，且不影响行数。
+
+    日期用字符串前缀比较（created_at 是 `2026-11-05T10:30:00+08:00`）：
+    这种 ISO 格式在同一时区偏移下字典序即时间序，所以 `>= '2026-11-05'`
+    等价于"当天 00:00 之后"。跨时区偏移会失效——本项目单机单时区，
+    真的要跨时区，那时得改成存 UTC 时间戳。
+    """
+
+    def _run() -> list[dict[str, Any]]:
+        sql = (
+            "SELECT r.id, r.session_id, r.user_id, r.trace_id, r.question, r.status, "
+            "r.rounds, r.total_ms, r.model, r.prompt_version, r.error_code, "
+            "r.created_at, r.finished_at, "
+            "u.emp_no, u.name AS user_name, u.dept, "
+            "(SELECT COUNT(*) FROM agent_steps s WHERE s.run_id = r.id) AS step_count, "
+            "(SELECT COUNT(*) FROM agent_steps s WHERE s.run_id = r.id AND s.status = 'error') AS error_steps, "
+            "(SELECT COUNT(*) FROM pending_actions p WHERE p.run_id = r.id) AS pending_count, "
+            "f.reason AS flag_reason, f.flagged_at, "
+            "fu.emp_no AS flagged_by_no "
+            "FROM agent_runs r "
+            "LEFT JOIN users u ON u.id = r.user_id "
+            "LEFT JOIN audit_flags f ON f.run_id = r.id "
+            "LEFT JOIN users fu ON fu.id = f.flagged_by "
+            "WHERE 1 = 1"
+        )
+        args: list[Any] = []
+
+        if keyword:
+            sql += " AND (u.emp_no LIKE ? OR u.name LIKE ? OR r.question LIKE ?)"
+            like = f"%{keyword.strip()}%"
+            args.extend([like, like, like])
+        if status:
+            sql += " AND r.status = ?"
+            args.append(status)
+        if date_from:
+            sql += " AND r.created_at >= ?"
+            args.append(date_from)
+        if date_to:
+            # 用户在筛选框里选"到 11-05"，意思是"包含 11-05 全天"。
+            # 直接用 `<= '2026-11-05'` 会把当天的记录全漏掉——因为
+            # '2026-11-05T10:30:00' > '2026-11-05'。这是差一天的经典写法错误。
+            try:
+                nxt = (date.fromisoformat(date_to) + timedelta(days=1)).isoformat()
+                sql += " AND r.created_at < ?"
+                args.append(nxt)
+            except ValueError:
+                pass
+        if only_flagged:
+            sql += " AND f.run_id IS NOT NULL"
+
+        sql += " ORDER BY r.created_at DESC, r.id DESC LIMIT ?"
+        args.append(limit)
+
+        with _connect() as conn:
+            return [dict(r) for r in conn.execute(sql, args).fetchall()]
+
+    return await asyncio.to_thread(_run)
+
+
+async def fetch_run(run_id: str) -> dict[str, Any] | None:
+    """单次运行的详情（带员工信息与标记）。"""
+
+    def _run() -> dict[str, Any] | None:
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT r.*, u.emp_no, u.name AS user_name, u.dept, "
+                "f.reason AS flag_reason, f.flagged_at, fu.emp_no AS flagged_by_no "
+                "FROM agent_runs r "
+                "LEFT JOIN users u ON u.id = r.user_id "
+                "LEFT JOIN audit_flags f ON f.run_id = r.id "
+                "LEFT JOIN users fu ON fu.id = f.flagged_by "
+                "WHERE r.id = ?",
+                (run_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    return await asyncio.to_thread(_run)
+
+
+async def list_pendings_by_run(run_id: str) -> list[dict[str, Any]]:
+    """
+    这次运行产生的写意图，以及它们最终被怎么处理。
+
+    这是审计页最关键的一块：`agent_steps` 只能说明"模型想写"，
+    真正说明"最后有没有写成"的是这张表——status 为 confirmed 才算数。
+    """
+
+    def _run() -> list[dict[str, Any]]:
+        with _connect() as conn:
+            # 不 JOIN users：pending_actions.user_id 是发起人，也就是**唯一有权确认的人**
+            # （decide_pending 里会校验）。再 JOIN 一次只会拿到同一个名字。
+            rows = conn.execute(
+                "SELECT * FROM pending_actions WHERE run_id = ? ORDER BY created_at ASC",
+                (run_id,),
+            ).fetchall()
+            out: list[dict[str, Any]] = []
+            for r in rows:
+                d = dict(r)
+                try:
+                    d["summary"] = json.loads(d["summary_json"]) if d.get("summary_json") else {}
+                except (ValueError, TypeError):
+                    d["summary"] = {}
+                out.append(d)
+            return out
+
+    return await asyncio.to_thread(_run)
+
+
+async def audit_summary(days: int = 7) -> dict[str, Any]:
+    """
+    近 N 天的总体情况。
+
+    刻意统计 `awaiting_confirm` 占比：它衡量的是"模型有多想直接写库"。
+    这个数越高，说明提示词里那条"你没有直接完成预约的权限"越需要加强。
+    """
+
+    def _run() -> dict[str, Any]:
+        since = (datetime.now().astimezone() - timedelta(days=days)).isoformat(timespec="seconds")
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS total, "
+                "SUM(CASE WHEN status = 'answered' THEN 1 ELSE 0 END) AS answered, "
+                "SUM(CASE WHEN status = 'awaiting_confirm' THEN 1 ELSE 0 END) AS awaiting_confirm, "
+                "SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed, "
+                "SUM(CASE WHEN status = 'max_rounds' THEN 1 ELSE 0 END) AS max_rounds, "
+                "AVG(rounds) AS avg_rounds, AVG(total_ms) AS avg_ms "
+                "FROM agent_runs WHERE created_at >= ?",
+                (since,),
+            ).fetchone()
+            steps = conn.execute(
+                "SELECT COUNT(*) AS n, "
+                "SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors, "
+                "SUM(CASE WHEN status = 'interrupted' THEN 1 ELSE 0 END) AS interrupted "
+                "FROM agent_steps WHERE created_at >= ?",
+                (since,),
+            ).fetchone()
+            flagged = conn.execute("SELECT COUNT(*) AS n FROM audit_flags").fetchone()
+
+        return {
+            "days": days,
+            "total": int(row["total"] or 0),
+            "answered": int(row["answered"] or 0),
+            "awaiting_confirm": int(row["awaiting_confirm"] or 0),
+            "failed": int(row["failed"] or 0),
+            "max_rounds": int(row["max_rounds"] or 0),
+            "avg_rounds": round(float(row["avg_rounds"] or 0), 1),
+            "avg_ms": int(row["avg_ms"] or 0),
+            "steps": int(steps["n"] or 0),
+            "step_errors": int(steps["errors"] or 0),
+            "step_interrupted": int(steps["interrupted"] or 0),
+            "flagged": int(flagged["n"] or 0),
+        }
+
+    return await asyncio.to_thread(_run)
+
+
+async def flag_run(
+    run_id: str,
+    reason: str,
+    actor: dict[str, Any] | None,
+    ip: str | None = None,
+) -> bool:
+    """
+    标记一次运行为"需要跟进"。已标记则更新理由（而不是报错）——
+    管理员第二次点标记，本意多半是"补充说明"，不是"我要标两次"。
+    """
+
+    def _run() -> bool:
+        now = _now()
+        with _connect() as conn:
+            existed = conn.execute(
+                "SELECT reason FROM audit_flags WHERE run_id = ?", (run_id,)
+            ).fetchone()
+            conn.execute(
+                "INSERT INTO audit_flags (run_id, reason, flagged_by, flagged_at) "
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(run_id) DO UPDATE SET reason = excluded.reason, "
+                "flagged_by = excluded.flagged_by, flagged_at = excluded.flagged_at",
+                (run_id, reason, actor.get("id") if actor else None, now),
+            )
+            _log(
+                conn,
+                actor=actor,
+                action="audit.flag" if not existed else "audit.reflag",
+                target_type="run",
+                target_id=run_id,
+                before={"reason": existed["reason"]} if existed else None,
+                after={"reason": reason},
+                ip=ip,
+            )
+            return True
+
+    return await asyncio.to_thread(_run)
+
+
+async def unflag_run(run_id: str, actor: dict[str, Any] | None, ip: str | None = None) -> bool:
+    """撤销标记。撤销本身也留痕——"谁把这条标记去掉了"同样值得追问。"""
+
+    def _run() -> bool:
+        with _connect() as conn:
+            row = conn.execute("SELECT reason FROM audit_flags WHERE run_id = ?", (run_id,)).fetchone()
+            if row is None:
+                return False
+            conn.execute("DELETE FROM audit_flags WHERE run_id = ?", (run_id,))
+            _log(
+                conn,
+                actor=actor,
+                action="audit.unflag",
+                target_type="run",
+                target_id=run_id,
+                before={"reason": row["reason"]},
+                ip=ip,
+            )
+            return True
 
     return await asyncio.to_thread(_run)
 

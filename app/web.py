@@ -922,6 +922,9 @@ _ACTION_LABELS = {
     "user.enable": "启用账号",
     "user.reset_password": "重置密码",
     "prompt.publish": "发布提示词",
+    "audit.flag": "标记对话",
+    "audit.reflag": "修改标记",
+    "audit.unflag": "撤销标记",
 }
 
 
@@ -988,7 +991,7 @@ async def admin_logs(request: Request) -> HTMLResponse:
     action = qp.get("action") or None
 
     rows = await db.list_op_logs(
-        target_type=target_type if target_type in ("booking", "device", "user", "prompt") else None,
+        target_type=target_type if target_type in ("booking", "device", "user", "prompt", "run") else None,
         target_id=target_id.strip() if target_id and target_id.strip() else None,
         action=action.strip() if action and action.strip() else None,
         limit=300,
@@ -1219,3 +1222,236 @@ async def admin_prompt_rollback(request: Request, tpl_key: str):
     return RedirectResponse(
         f"/admin/prompts/{tpl_key}?ok=rollback&v={result['version']}&from={version}", status_code=302
     )
+
+
+# =============================================================================
+# 对话审计（批次 4）
+# -----------------------------------------------------------------------------
+# 与「操作日志」的分工必须先说清楚，否则一定会有人问"为什么不合并"：
+#   操作日志 = 人对系统做了什么（谁取消了谁的预约），供追责
+#   对话审计 = 模型对系统做了什么（问了什么、调了什么工具、有没有被拦下），供复盘
+# 前者是业务事实，后者是行为样本。混在一起，两边都会被对方的噪音淹没。
+#
+# 这一页的排序也是刻意的：**先给"待确认"和"失败"，再给正常回答**。
+# 正常回答是绝大多数，按时间倒序会把它铺满整屏，真正要看的异常沉到底部。
+# =============================================================================
+
+_RUN_STATUS_LABELS = {
+    "running": "进行中",
+    "answered": "已回答",
+    "awaiting_confirm": "待确认",
+    "max_rounds": "轮次超限",
+    "failed": "失败",
+}
+
+_STEP_STATUS_LABELS = {
+    "ok": "成功",
+    "error": "失败",
+    "interrupted": "已中断",
+    "skipped": "已跳过",
+}
+
+_TOOL_LABELS = {
+    "search_policy": "制度检索",
+    "find_available_slots": "查空闲时段",
+    "get_device_info": "查设备信息",
+    "get_my_bookings": "查我的预约",
+    "validate_booking": "校验预约",
+    "request_booking": "发起预约",
+    "cancel_booking": "取消预约",
+}
+
+_RUN_STATUS_TONE = {
+    "answered": "ok",
+    "awaiting_confirm": "warn",
+    "max_rounds": "warn",
+    "failed": "danger",
+    "running": "mute",
+}
+
+# 待确认动作的最终结局。confirmed 才算"真的写进去了"，
+# 其余四种都意味着这次写意图没有落地——审计要能一眼分清。
+_PENDING_STATUS_LABELS = {
+    "pending": "等用户点击",
+    "confirmed": "已确认（落单）",
+    "rejected": "用户拒绝",
+    "expired": "已过期",
+    "failed": "确认时失败",
+}
+
+_PENDING_STATUS_TONE = {
+    "confirmed": "ok",
+    "pending": "warn",
+    "rejected": "mute",
+    "expired": "mute",
+    "failed": "danger",
+}
+
+
+def _pretty_json(raw: str | None) -> str:
+    """把存下来的 JSON 参数排版成人能读的样子；解析不了就原样返回。"""
+    if not raw:
+        return ""
+    try:
+        return json.dumps(json.loads(raw), ensure_ascii=False, indent=2)
+    except (ValueError, TypeError):
+        return raw
+
+
+def _ms_text(ms: Any) -> str:
+    """
+    毫秒转人话。
+
+    审计表里全是 `total_ms` 这种裸数字，一眼看不出好坏；
+    "1.8s" 和 "1800" 对管理员的信息量完全不同。0 和 None 都显示破折号，
+    因为 0ms 只出现在脚本化的假模型里，真实调用不会是 0。
+    """
+    try:
+        value = int(ms)
+    except (TypeError, ValueError):
+        return "—"
+    if value <= 0:
+        return "—"
+    return f"{value / 1000:.1f}s" if value >= 1000 else f"{value}ms"
+
+
+async def _audit_page(
+    request: Request,
+    user: dict,
+    *,
+    keyword: str = "",
+    status: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    only_flagged: bool = False,
+) -> HTMLResponse:
+    runs = await db.list_runs(
+        keyword=keyword or None,
+        status=status if status in _RUN_STATUS_LABELS else None,
+        date_from=date_from or None,
+        date_to=date_to or None,
+        only_flagged=only_flagged,
+        limit=100,
+    )
+    for r in runs:
+        r["status_label"] = _RUN_STATUS_LABELS.get(r.get("status"), r.get("status") or "—")
+        r["status_tone"] = _RUN_STATUS_TONE.get(r.get("status"), "mute")
+        r["elapsed_text"] = _ms_text(r.get("total_ms"))
+
+    summary = await db.audit_summary(days=7)
+    return render(
+        request,
+        "admin_audit.html",
+        {
+            "user": user,
+            "runs": runs,
+            "summary": summary,
+            "filters": {
+                "keyword": keyword,
+                "status": status,
+                "date_from": date_from,
+                "date_to": date_to,
+                "only_flagged": only_flagged,
+            },
+        },
+    )
+
+
+@router.get("/admin/audit", response_class=HTMLResponse)
+async def admin_audit(request: Request) -> HTMLResponse:
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    qp = request.query_params
+    return await _audit_page(
+        request,
+        user,
+        keyword=(qp.get("q") or "").strip()[:60],
+        status=(qp.get("status") or "").strip(),
+        date_from=(qp.get("from") or "").strip(),
+        date_to=(qp.get("to") or "").strip(),
+        only_flagged=qp.get("flagged") == "1",
+    )
+
+
+@router.get("/admin/audit/{run_id}", response_class=HTMLResponse)
+async def admin_audit_detail(request: Request, run_id: str) -> HTMLResponse:
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    run = await db.fetch_run(run_id)
+    if run is None:
+        return render(request, "error.html", {"user": user, "code": 404, "message": "没有这条对话记录"}, 404)
+
+    steps = await db.list_steps(run_id)
+    for s in steps:
+        s["tool_label"] = _TOOL_LABELS.get(s.get("tool_name"), s.get("tool_name") or "—")
+        s["status_label"] = _STEP_STATUS_LABELS.get(s.get("status"), s.get("status") or "—")
+        s["args_pretty"] = _pretty_json(s.get("args_json"))
+        s["is_write"] = (s.get("tool_name") or "") in ("request_booking", "cancel_booking")
+
+    pendings = await db.list_pendings_by_run(run_id)
+
+    # 会话上下文：用 trace_id 认出"这一问"和"这一答"。
+    # 不靠时间戳，因为同一秒可能有两轮；trace_id 是唯一能准确定位的字段。
+    transcript: list[dict[str, Any]] = []
+    if run.get("session_id"):
+        msgs = await db.list_messages(run["session_id"], limit=200)
+        for m in msgs:
+            m["is_current"] = bool(run.get("trace_id")) and m.get("trace_id") == run.get("trace_id")
+            transcript.append(m)
+
+    run["status_label"] = _RUN_STATUS_LABELS.get(run.get("status"), run.get("status") or "—")
+    run["status_tone"] = _RUN_STATUS_TONE.get(run.get("status"), "mute")
+    run["elapsed_text"] = _ms_text(run.get("total_ms"))
+
+    for p in pendings:
+        p["status_label"] = _PENDING_STATUS_LABELS.get(p.get("status"), p.get("status") or "—")
+        p["status_tone"] = _PENDING_STATUS_TONE.get(p.get("status"), "mute")
+
+    return render(
+        request,
+        "admin_audit_detail.html",
+        {
+            "user": user,
+            "run": run,
+            "steps": steps,
+            "pendings": pendings,
+            "transcript": transcript,
+            "tool_labels": _TOOL_LABELS,
+        },
+    )
+
+
+@router.post("/admin/audit/{run_id}/flag")
+async def admin_audit_flag(request: Request, run_id: str):
+    """
+    标记 / 撤销「需要跟进」。
+
+    标记不是把对话删掉或者改状态——原始轨迹永远不动。它只是人的一句批注，
+    所以放在 audit_flags 而不是往 agent_runs 上加列。
+    """
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    if await db.fetch_run(run_id) is None:
+        return render(request, "error.html", {"user": user, "code": 404, "message": "没有这条对话记录"}, 404)
+
+    reason = _clean(form.get("reason"), 120)
+    clearing = bool(form.get("clear"))
+    try:
+        if clearing or not reason:
+            await db.unflag_run(run_id, actor=user, ip=_ip(request))
+        else:
+            await db.flag_run(run_id, reason, actor=user, ip=_ip(request))
+    except ApiError as exc:
+        return render(request, "error.html", {"user": user, "code": exc.status, "message": exc.message}, exc.status)
+
+    return RedirectResponse(f"/admin/audit/{run_id}", status_code=302)

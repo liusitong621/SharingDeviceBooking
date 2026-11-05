@@ -542,3 +542,183 @@ a.stat:hover { border-color: #c7d9fb; background: #fcfdff; text-decoration: none
 .tpl-row-title strong { font-size: 14.5px; color: var(--ink); }
 .tpl-row-title code { font-size: 11.5px; color: var(--muted); }
 .tpl-row-sub { margin-top: 5px; font-size: 12.5px; color: var(--muted); }
+
+/* ------------------------------------------------------------ 对话审计页 */
+/* 筛选区沿用日志页的行内布局（那里已经证明好用），抽成 .f 复用。 */
+.f {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.f input[type="text"],
+.f input[type="date"],
+.f select {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--ink);
+  background: #fff;
+}
+.f input[type="text"] { width: 260px; }
+.f input:focus,
+.f select:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+}
+
+/* 详情页的元信息：六格，窄屏自动两列 */
+.kv-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px 24px;
+}
+.kv-grid > div { display: flex; flex-direction: column; gap: 2px; }
+.kv-grid span { font-size: 12px; color: var(--muted); }
+.kv-grid b { font-size: 14px; color: var(--ink); font-weight: 600; }
+.kv-grid i { font-size: 11.5px; color: var(--muted); font-style: normal; }
+
+/* 标记区。刻意不加红色边框：标记是"要跟进"，不是"出错了"，
+   用警告色会让整页看起来像故障。 */
+.flag-note {
+  padding: 9px 12px;
+  margin-bottom: 12px;
+  border-left: 3px solid var(--warn);
+  border-radius: 0 8px 8px 0;
+  background: var(--warn-soft);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.flag-form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.flag-form input {
+  flex: 1;
+  min-width: 240px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--ink);
+}
+.flag-form input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+}
+.flag-hint { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.8; }
+
+/* 本轮问答：左侧竖线区分说话人，避免做成聊天气泡——
+   审计页要的是"能一眼读完"，不是"像微信"。 */
+.qa { display: flex; flex-direction: column; gap: 14px; }
+.qa-q, .qa-a {
+  position: relative;
+  padding-left: 54px;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+.qa-q > span, .qa-a > span {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  font-size: 11.5px;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+.qa-q > span { background: var(--brand-soft); color: var(--brand); }
+.qa-a > span { background: #f2f3f5; color: var(--muted); }
+
+/* 工具轨迹：编号 + 竖线，读起来像时间线而不像表格 */
+.trace { list-style: none; margin: 0; padding: 0 0 0 6px; }
+.trace-item {
+  position: relative;
+  padding: 0 0 18px 24px;
+  border-left: 2px solid var(--line-2);
+}
+.trace-item:last-child { border-left-color: transparent; padding-bottom: 0; }
+.trace-item::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ok);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.trace-item.error::before { background: var(--danger); }
+.trace-item.interrupted::before { background: var(--warn); }
+.trace-item.skipped::before { background: var(--muted); }
+
+.trace-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13.5px;
+}
+.trace-head strong { color: var(--ink); }
+.trace-head code { font-size: 11.5px; color: var(--muted); }
+.trace-round {
+  font-size: 11.5px;
+  color: var(--muted);
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #f2f3f5;
+}
+.trace-ms { margin-left: auto; font-size: 11.5px; color: var(--muted); }
+.trace-detail { margin: 6px 0 0; }
+.trace-detail summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--muted);
+  list-style: none;
+}
+.trace-detail summary::-webkit-details-marker { display: none; }
+.trace-detail summary::before { content: "▸ "; }
+.trace-detail[open] summary::before { content: "▾ "; }
+.trace-detail summary:hover { color: var(--brand); }
+.trace-result {
+  margin-top: 6px;
+  padding: 8px 11px;
+  border-radius: 8px;
+  background: #fafbfc;
+  border: 1px solid var(--line-2);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+}
+
+/* 会话上下文：比聊天界面窄、字号小，因为它只是旁证 */
+.mini-chat { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.mini-msg {
+  display: grid;
+  grid-template-columns: 46px 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 11px;
+  border-radius: 8px;
+  background: #fafbfc;
+  border: 1px solid var(--line-2);
+}
+.mini-msg > span { font-size: 11.5px; color: var(--muted); }
+.mini-msg > p { margin: 0; font-size: 12.5px; line-height: 1.7; color: var(--ink-2); }
+.mini-msg > i { font-size: 11px; color: var(--muted); font-style: normal; }
+.mini-msg.assistant { background: #fff; }
+.mini-msg.current {
+  border-color: #c7d9fb;
+  background: var(--brand-soft);
+}
+.mini-msg.current > p { color: var(--ink); }
+
+@media (max-width: 900px) {
+  .kv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

@@ -15,6 +15,7 @@
           <option value="device" {% if filters.target_type == 'device' %}selected{% endif %}>设备</option>
           <option value="user" {% if filters.target_type == 'user' %}selected{% endif %}>账号</option>
           <option value="prompt" {% if filters.target_type == 'prompt' %}selected{% endif %}>提示词</option>
+          <option value="run" {% if filters.target_type == 'run' %}selected{% endif %}>对话审计标记</option>
         </select>
       </label>
       <label style="display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)">

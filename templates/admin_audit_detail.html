@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}对话详情{% endblock %}
+{% block heading %}对话详情{% endblock %}
+{% block subheading %}{{ run.emp_no or '未知工号' }} · {{ run.created_at[:16].replace('T', ' ') }}{% endblock %}
+
+{% block actions %}
+<a href="/admin/audit" class="btn">返回列表</a>
+{% endblock %}
+
+{% block body %}
+<div class="card">
+  <div class="card-hd">
+    <h2>本轮概况</h2>
+    <span class="badge {{ run.status_tone }}">{{ run.status_label }}</span>
+  </div>
+  <div class="card-bd">
+    <div class="kv-grid">
+      <div><span>员工</span><b>{{ run.user_name or '—' }}</b><i>{{ run.emp_no or '—' }} · {{ run.dept or '未分配部门' }}</i></div>
+      <div><span>轮数</span><b>{{ run.rounds or 0 }} / 5</b><i>决策轮次</i></div>
+      <div><span>耗时</span><b>{{ run.elapsed_text }}</b><i>含工具调用</i></div>
+      <div><span>模型</span><b class="mono">{{ run.model or '—' }}</b><i>{{ run.error_code or '无错误' }}</i></div>
+      <div><span>提示词版本</span><b>{% if run.prompt_version %}v{{ run.prompt_version }}{% else %}内置模板{% endif %}</b>
+        <i>{% if run.prompt_version %}<a href="/admin/prompts/agent_system">查看模板</a>{% else %}未入库{% endif %}</i></div>
+      <div><span>trace</span><b class="mono">{{ (run.trace_id or '—')[:14] }}</b><i>链路 ID</i></div>
+    </div>
+  </div>
+</div>
+
+{# 标记区单独一块：它不改变任何原始数据，只是人加的一句批注。
+   这个区别要写在界面上，否则管理员会以为标记等于"把这条处理掉了"。 #}
+<div class="card" style="margin-top:16px">
+  <div class="card-hd">
+    <h2>跟进标记</h2>
+    {% if run.flag_reason %}
+    <span class="badge warn">已标记 · {{ run.flagged_by_no or '未知' }}</span>
+    {% else %}
+    <span class="badge mute">未标记</span>
+    {% endif %}
+  </div>
+  <div class="card-bd">
+    {% if run.flag_reason %}
+    <div class="flag-note">当前理由：<strong>{{ run.flag_reason }}</strong>
+      <span style="color:var(--muted)">（{{ (run.flagged_at or '')[:16].replace('T', ' ') }}）</span></div>
+    {% endif %}
+    <form method="post" action="/admin/audit/{{ run.id }}/flag" class="flag-form">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <input type="text" name="reason" maxlength="120"
+             value="{{ run.flag_reason or '' }}"
+             placeholder="例：同一时段反复下单，疑似代为预约">
+      <button type="submit" class="btn primary">保存标记</button>
+      {% if run.flag_reason %}
+      {# 用不同字段名而不是同名空值：两个同名 reason 会一起提交，
+         后端 form.get("reason") 只会拿到前一个，撤销永远不生效。 #}
+      <button type="submit" class="btn" name="clear" value="1">撤销标记</button>
+      {% endif %}
+    </form>
+    <div class="flag-hint">
+      标记只加批注，<strong>不改动任何原始轨迹</strong>——对话内容、工具参数、最终回答都保持原样。
+      撤销标记本身也会进操作日志（<span class="mono">audit.unflag</span>），因为"谁把标记去掉了"同样值得追问。
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-hd">
+    <h2>这一轮问了什么</h2>
+  </div>
+  <div class="card-bd">
+    <div class="qa">
+      <div class="qa-q"><span>用户</span>{{ run.question }}</div>
+      {% set answer = namespace(text='') %}
+      {% for m in transcript %}
+        {% if m.is_current and m.role == 'assistant' %}{% set answer.text = m.content %}{% endif %}
+      {% endfor %}
+      <div class="qa-a"><span>助手</span>{{ answer.text or '（本次没有产生回答，可能是中断在等待确认）' }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-hd">
+    <h2>工具轨迹</h2>
+    <span class="badge mute">{{ steps|length }} 次调用</span>
+  </div>
+  {% if steps %}
+  <div class="card-bd">
+    <ol class="trace">
+      {% for s in steps %}
+      <li class="trace-item {{ s.status }}">
+        <div class="trace-head">
+          <span class="trace-round">第 {{ s.round_no }} 轮</span>
+          <strong>{{ s.tool_label }}</strong>
+          <code class="mono">{{ s.tool_name }}</code>
+          {% if s.is_write %}<span class="badge warn">写操作</span>{% endif %}
+          <span class="badge {{ 'ok' if s.status == 'ok' else ('warn' if s.status == 'interrupted' else ('danger' if s.status == 'error' else 'mute')) }}">
+            {{ s.status_label }}
+          </span>
+          <span class="trace-ms mono">{{ s.elapsed_ms }}ms</span>
+          {% if s.error_code %}<code class="mono" style="color:var(--danger)">{{ s.error_code }}</code>{% endif %}
+        </div>
+        {% if s.args_pretty %}
+        <details class="trace-detail">
+          <summary>参数</summary>
+          <pre class="tpl-preview sm">{{ s.args_pretty }}</pre>
+        </details>
+        {% endif %}
+        {% if s.result_summary %}
+        <div class="trace-result">{{ s.result_summary }}</div>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+  {% else %}
+  <div class="empty">
+    这一轮没有任何工具调用。纯问答（比如"制度怎么规定的"如果模型直接答了）也会这样，
+    但更常见的原因是中断发生在第 1 轮，或者模型选择直接作答。
+  </div>
+  {% endif %}
+</div>
+
+{# 写意图单列一块，因为它是审计的核心问题：
+   "模型想写库，最后到底写成了没有"。agent_steps 只能说明想，这张表才能说明成。 #}
+<div class="card" style="margin-top:16px">
+  <div class="card-hd">
+    <h2>写意图与最终结果</h2>
+    <span class="badge {{ 'warn' if pendings else 'mute' }}">{{ pendings|length }} 条</span>
+  </div>
+  {% if pendings %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width:120px">动作</th>
+        <th>内容</th>
+        <th style="width:130px">结局</th>
+        <th style="width:150px">时间</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in pendings %}
+      <tr>
+        <td class="mono" style="font-size:12px">{{ tool_labels.get(p.action, p.action) }}<div style="color:var(--muted);font-size:11px">{{ p.action }}</div></td>
+        <td style="font-size:12.5px;line-height:1.7">
+          {% for k, v in p.summary.items() %}
+          <span style="color:var(--muted)">{{ k }}:</span> {{ v }}{% if not loop.last %} · {% endif %}
+          {% endfor %}
+          {% if not p.summary %}<span style="color:var(--muted)">（无摘要）</span>{% endif %}
+        </td>
+        <td><span class="badge {{ p.status_tone }}">{{ p.status_label }}</span></td>
+        <td class="mono" style="font-size:11.5px;color:var(--muted)">
+          建 {{ p.created_at[:16].replace('T', ' ') }}<br>
+          {% if p.decided_at %}决 {{ p.decided_at[:16].replace('T', ' ') }}{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">这一轮模型没有发起任何写操作。</div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-hd">
+    <h2>会话上下文</h2>
+    <span class="badge mute">本轮高亮 · {{ transcript|length }} 条</span>
+  </div>
+  <div class="card-bd">
+    <details class="tpl-detail" {% if transcript|length <= 6 %}open{% endif %}>
+      <summary>展开 / 收起本次会话的全部消息</summary>
+      <div class="mini-chat">
+        {% for m in transcript %}
+        <div class="mini-msg {{ m.role }} {% if m.is_current %}current{% endif %}">
+          <span>{{ '用户' if m.role == 'user' else '助手' }}</span>
+          <p>{{ m.content[:400] }}{% if m.content|length > 400 %}…{% endif %}</p>
+          <i class="mono">{{ m.created_at[11:16] }}{% if m.is_current %} · 本轮{% endif %}</i>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+  </div>
+</div>
+{% endblock %}
