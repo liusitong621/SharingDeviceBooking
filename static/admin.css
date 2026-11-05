@@ -516,7 +516,196 @@ input[type="file"]::file-selector-button:hover {
 .alert.error { background: var(--danger-soft); border-color: var(--danger-line); border-left-color: var(--danger); color: var(--danger); }
 .alert.info { background: var(--brand-soft); border-color: #d5dde6; border-left-color: var(--brand); color: var(--brand); }
 
-/* ---------------------------------------------------------------- 登录页 */
+/* ---------------------------------------------------------------- 员工端登录 */
+/* 员工端登录只有一张居中的表：它对应"我下班了借个设备"这个场景，
+   不需要先看见系统有什么功能。顶栏与员工端内页完全一致，
+   登录成功后的过渡不会跳变。 */
+.emp-main {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 40px 20px 64px;
+}
+
+.emp-card {
+  width: 100%;
+  max-width: 382px;
+  padding: 28px 26px 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--ink);   /* 文件抬头的一条实线 */
+  border-radius: var(--radius);
+}
+
+.emp-card h1 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: .03em;
+}
+.emp-lede {
+  margin: 6px 0 20px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+.emp-card .btn.primary {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 4px;
+  font-size: 13.5px;
+  letter-spacing: .08em;
+}
+.emp-foot {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-2);
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.85;
+}
+
+/* ---------------------------------------------------------------- 管理端登录 */
+/* 管理端登录刻意做成"另一块屏"：左侧深藏青的目录墙，右侧一张表。
+   员工端是浅色单卡，管理端是深色双栏——不用读标题就知道自己站在哪边。 */
+.adm-body { margin: 0; min-height: 100vh; background: var(--panel); }
+
+.adm-split {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(300px, 40%) minmax(0, 1fr);
+}
+
+.adm-side {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 28px;
+  padding: 44px 40px 32px;
+  background: #16324f;
+  color: #fff;
+}
+
+.adm-side-top { display: flex; align-items: center; gap: 12px; }
+.adm-mark {
+  width: 34px; height: 34px;
+  flex: none;
+  display: grid; place-items: center;
+  border: 1px solid rgba(255, 255, 255, .55);
+  border-radius: 2px;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  line-height: 1;
+}
+.adm-side-top strong {
+  display: block;
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: .05em;
+}
+.adm-side-top small {
+  display: block;
+  margin-top: 2px;
+  color: rgba(255, 255, 255, .55);
+  font-size: 10px;
+  letter-spacing: .2em;
+}
+
+.adm-side-mid h1 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.adm-side-mid p {
+  margin: 9px 0 24px;
+  color: rgba(255, 255, 255, .66);
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+
+.adm-dirs { list-style: none; margin: 0; padding: 0; }
+.adm-dirs li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, .09);
+  color: rgba(255, 255, 255, .72);
+  font-size: 11.5px;
+  letter-spacing: .02em;
+}
+.adm-dirs span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: rgba(255, 255, 255, .38);
+}
+
+.adm-side-foot {
+  color: rgba(255, 255, 255, .42);
+  font-size: 10.5px;
+  letter-spacing: .08em;
+}
+
+.adm-pane { display: grid; place-items: center; padding: 44px 32px; }
+.adm-form { width: 100%; max-width: 358px; }
+.adm-form h2 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+.adm-form > p {
+  margin: 6px 0 20px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.adm-form .btn.primary {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 4px;
+  font-size: 13.5px;
+  letter-spacing: .08em;
+}
+
+.adm-switch {
+  display: block;
+  width: 100%;
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+.adm-switch:hover { color: var(--brand); text-decoration: none; }
+
+@media (max-width: 860px) {
+  /* 单列时必须显式给行：grid 的 auto 行会平分 100vh，
+     深色页头就被拉到半屏，中间空一大块 */
+  .adm-split { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  /* 深色区在手机上收成一条页头。保持 space-between 会把它撑到半屏，
+     而这一屏的主角是下面那张表。 */
+  .adm-side { justify-content: flex-start; gap: 14px; padding: 20px; }
+  .adm-side-mid h1 { font-size: 20px; }
+  .adm-side-mid p { margin: 4px 0 0; font-size: 11.5px; line-height: 1.65; }
+  /* 手机上不重复一遍后台目录：它是"这里有什么"的预告，不是导航 */
+  .adm-dirs, .adm-side-foot, .adm-side-top small { display: none; }
+  .adm-pane { padding: 26px 20px 48px; place-items: start center; }
+}
+
+@media (max-width: 560px) {
+  /* 员工端：手机上卡片靠上，别让垂直居中把首屏空白拉满 */
+  .emp-main { padding: 26px 16px 40px; place-items: start center; }
+  .emp-card { padding: 24px 20px 18px; }
+}
+
+/* ---------------------------------------------------------------- 改密页 */
+/* 半登录态：已经认证、还没进任何一端。用中性单卡，不套两端任何一方的壳。 */
 .auth-wrap {
   min-height: 100vh;
   display: grid;

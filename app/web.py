@@ -79,7 +79,10 @@ def login_redirect(request: Request) -> RedirectResponse:
     if request.url.query:
         full = f"{full}?{request.url.query}"
     nxt = quote(full, safe="/?=&-_.~")
-    return RedirectResponse(f"/login?next={nxt}", status_code=302)
+    # 两端各有自己的登录页。从 /admin/** 被踢出来的人要回到管理端登录，
+    # 否则会遇到"在员工端登录成功、进门还是 403"的循环。
+    entry = "/admin/login" if request.url.path.startswith("/admin") else "/login"
+    return RedirectResponse(f"{entry}?next={nxt}", status_code=302)
 
 
 async def page_user(request: Request) -> dict[str, Any] | None:
@@ -173,12 +176,82 @@ async def login_submit(
     return resp
 
 
-@router.post("/logout")
-async def logout(request: Request) -> RedirectResponse:
+@router.get("/admin/login", response_class=HTMLResponse)
+async def admin_login_page(request: Request, next: str = "/admin") -> HTMLResponse:
+    """
+    管理端登录页。与员工端刻意长得不一样——两个入口混用同一张表单时，
+    员工会从后台入口登进去、看到 403，然后以为是"系统坏了"。
+
+    已登录但角色不是管理员时不自动跳走：让他看见"当前登录的是员工账号"，
+    比默默把他弹回员工端更清楚。这里**不销毁**现有会话，由他决定换号还是回去。
+    """
+    user = await page_user(request)
+    if user and user.get("role") == "admin":
+        return RedirectResponse(_safe_next(next, "/admin"), status_code=302)
+    return render(
+        request, "admin_login.html",
+        {"next": next, "error": None, "signed_in_as": user.get("emp_no") if user else None},
+    )
+
+
+@router.post("/admin/login", response_class=HTMLResponse)
+async def admin_login_submit(
+    request: Request,
+    emp_no: str = Form(""),
+    password: str = Form(""),
+    next: str = Form("/admin"),
+) -> HTMLResponse:
     form = await request.form()
     if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
-        return RedirectResponse("/login", status_code=302)
-    resp = RedirectResponse("/login", status_code=302)
+        return render(request, "admin_login.html",
+                      {"next": next, "error": "页面已过期，请刷新后重试", "signed_in_as": None}, 403)
+
+    emp_no = emp_no.strip()
+    if not emp_no or not password:
+        return render(request, "admin_login.html",
+                      {"next": next, "error": "请输入工号和密码", "signed_in_as": None}, 400)
+
+    try:
+        user = await auth.authenticate(emp_no, password)
+    except ApiError as exc:
+        return render(request, "admin_login.html",
+                      {"next": next, "error": exc.message, "signed_in_as": None}, exc.status)
+
+    # 关键：角色不对就不下发会话。只在页面上提示"员工请走员工端"是不够的，
+    # 那等于让他先拿到一个能用的登录态。
+    if user.get("role") != "admin":
+        logger.info("管理端登录被拒（非管理员）：%s", user["emp_no"])
+        return render(
+            request, "admin_login.html",
+            {"next": next, "signed_in_as": None,
+             "error": "这个入口只给管理员。员工请使用员工端登录页。"},
+            403,
+        )
+
+    target = "/change-password" if user.get("must_change_pwd") else _safe_next(next, "/admin")
+    resp = RedirectResponse(target, status_code=302)
+    auth.attach_session(resp, user, request)
+    logger.info("管理端登录成功：%s (%s)", user["emp_no"], user["role"])
+    return resp
+
+
+@router.post("/logout")
+async def logout(request: Request) -> RedirectResponse:
+    """
+    退出后回到"他刚才所在那一端的登录页"。
+
+    用 Referer 判断而不是角色：管理员在员工端看效果时点退出，
+    应该回员工端登录，而不是被扔到管理端登录页。
+    """
+    user = await page_user(request)
+    referer = request.headers.get("referer", "")
+    on_admin = referer.split("://", 1)[-1].partition("/")[2].startswith("admin")
+    target = "/admin/login" if (on_admin and user and user.get("role") == "admin") else "/login"
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return RedirectResponse(target, status_code=302)
+    resp = RedirectResponse(target, status_code=302)
     auth.clear_session(resp)
     return resp
 
@@ -226,6 +299,16 @@ async def change_password_submit(
 
 def _home_for(user: dict[str, Any]) -> str:
     return "/admin" if user.get("role") == "admin" else "/"
+
+
+def _safe_next(nxt: str, fallback: str) -> str:
+    """
+    登录后落点校验：只接受站内绝对路径。
+
+    挡的是 `next=//evil.com` 这种开放重定向——浏览器会把 `//host` 当成
+    协议相对 URL 直接跳走，登录页正好是最容易被塞参数的地方。
+    """
+    return nxt if nxt.startswith("/") and not nxt.startswith("//") else fallback
 
 
 # =============================================================================

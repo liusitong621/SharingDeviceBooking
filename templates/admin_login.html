@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#16324f">
+  <title>管理后台登录 · 设备借用</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="adm-body">
+{# 管理端登录：左深右浅的双栏，左边把后台有哪八件事直接印出来。
+   与员工端登录（浅色单卡）刻意做成两块不同的屏 ——
+   共用一张表单时，员工会从后台入口登进去、看到 403，然后以为系统坏了。 #}
+<div class="adm-split">
+  <aside class="adm-side">
+    <div class="adm-side-top">
+      <div class="adm-mark" aria-hidden="true">借</div>
+      <div>
+        <strong>设备借用</strong>
+        <small>管理后台</small>
+      </div>
+    </div>
+
+    <div class="adm-side-mid">
+      <h1>后台管理</h1>
+      <p>设备台账、超期处置、账号与制度维护。<br>仅设备科管理员可进入。</p>
+      <ol class="adm-dirs">
+        <li><span>01</span>概览</li>
+        <li><span>02</span>设备台账</li>
+        <li><span>03</span>超期与未取</li>
+        <li><span>04</span>账号管理</li>
+        <li><span>05</span>操作日志</li>
+        <li><span>06</span>制度知识库</li>
+        <li><span>07</span>提示词模板</li>
+        <li><span>08</span>对话审计</li>
+      </ol>
+    </div>
+
+    <div class="adm-side-foot">内网系统 · 操作全程留痕</div>
+  </aside>
+
+  <main class="adm-pane">
+    <div class="adm-form">
+      <h2>管理员登录</h2>
+      <p>请使用管理员工号。员工账号无法进入后台。</p>
+
+      {# 已登录但不是管理员：不销毁会话，让他自己决定换号还是回员工端 #}
+      {% if signed_in_as %}
+      <div class="alert info">
+        当前已登录 <b>{{ signed_in_as }}</b>，但该账号不是管理员。重新登录会切换账号。
+      </div>
+      {% endif %}
+
+      {% if error %}
+      <div class="alert error">{{ error }}</div>
+      {% endif %}
+
+      <form method="post" action="/admin/login">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <input type="hidden" name="next" value="{{ next }}">
+
+        <div class="field">
+          <label for="emp_no">管理员工号</label>
+          <input id="emp_no" name="emp_no" type="text" autocomplete="username"
+                 placeholder="例如 admin" required autofocus>
+        </div>
+
+        <div class="field">
+          <label for="password">密码</label>
+          <input id="password" name="password" type="password"
+                 autocomplete="current-password" placeholder="首次登录后需修改" required>
+        </div>
+
+        <button type="submit" class="btn primary">进入后台</button>
+      </form>
+
+      <a class="adm-switch" href="/login">我是员工，去员工端登录 →</a>
+    </div>
+  </main>
+</div>
+</body>
+</html>

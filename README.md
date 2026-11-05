@@ -370,6 +370,8 @@ CREATE UNIQUE INDEX uq_booking_slot ON bookings(device_id, slot_date, slot_start
 | 入口 | `/` `/devices` `/bookings` | `/admin/**` |
 | 布局 | 顶部品牌条 + 横向三 tab | 左侧编号目录 01–08 |
 | 宽度 | 版心 900px，移动优先 | 满宽控制台 |
+| 登录页 | `/login` 浅色单卡 + 员工端顶栏 | `/admin/login` 深色双栏 + 后台目录墙 |
+| 退出后回到 | `/login` | `/admin/login` |
 | 模板 | `templates/user_base.html` | `templates/base.html` |
 | 样式 | `static/user.css`（只管壳） | `static/admin.css` |
 
@@ -381,6 +383,10 @@ CREATE UNIQUE INDEX uq_booking_slot ON bookings(device_id, slot_date, slot_start
    卡片、按钮、表格、徽章、状态色全部来自 `admin.css`。两端是同一个产品的两种用法。
 3. **两个出口互相可达。** 管理端目录下方有「切换到员工端」，员工端顶部条对管理员
    显示「管理端 →」——管理员要能看见员工看到的东西，否则后台指标就是纸面数字。
+4. **登录入口也分开，而且管理端入口会拒绝员工。** `/admin/login` 在认证成功后还要判角色，
+   不是管理员就**不下发会话**（不是"先登进去再提示没权限"）。未登录访问 `/admin/**`
+   跳 `/admin/login`，访问其余页面跳 `/login`；退出按 Referer 回到刚才所在那一端，
+   管理员在员工端看效果时点退出不会被扔到管理端。
 
 `static/index.html` 是原生 JS 页面（SSE 流式回答），不走 Jinja，所以它的壳是手写的
 同一套类名。注意那个文件里只能用 HTML 注释：`{# #}` 不过模板引擎，会被原样打到页面上。

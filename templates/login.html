@@ -2,20 +2,32 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f2ed">
   <title>登录 · 设备借用</title>
   <link rel="stylesheet" href="/static/admin.css">
+  <link rel="stylesheet" href="/static/user.css">
 </head>
-<body>
-<div class="auth-wrap">
-  <div class="auth-card">
-    <div class="auth-brand">
-      <div class="logo">借</div>
-      <div>
-        <strong>设备借用</strong>
-        <small>制度问答 · 预约管理</small>
-      </div>
+<body class="u-body emp-login">
+{# 员工端登录：与员工端内页同一套顶栏（品牌 + 员工端），不是后台的门口。
+   这是两个登录页里"浅色、单卡"的那一个，管理端是深色双栏。 #}
+<header class="u-top">
+  <div class="u-brand">
+    <div class="logo" aria-hidden="true">借</div>
+    <div class="u-brand-text">
+      <strong>设备借用</strong>
+      <small>员工端</small>
     </div>
+  </div>
+  <div class="u-top-right">
+    <a class="u-link" href="/admin/login">管理端 →</a>
+  </div>
+</header>
+
+<main class="emp-main">
+  <section class="emp-card">
+    <h1>员工登录</h1>
+    <p class="emp-lede">用工号登录，可以预约设备、查看空档、向制度助手提问。</p>
 
     {% if error %}
     <div class="alert error">{{ error }}</div>
@@ -28,25 +40,23 @@
 
       <div class="field">
         <label for="emp_no">工号</label>
-        <input id="emp_no" name="emp_no" type="text" autocomplete="username"
-               placeholder="例如 1001" required autofocus>
+        <input id="emp_no" name="emp_no" type="text" inputmode="numeric"
+               autocomplete="username" placeholder="例如 1001" required autofocus>
       </div>
 
       <div class="field">
         <label for="password">密码</label>
-        <input id="password" name="password" type="password" autocomplete="current-password"
-               placeholder="首次登录后需修改" required>
+        <input id="password" name="password" type="password"
+               autocomplete="current-password" placeholder="首次登录后需修改" required>
       </div>
 
       <button type="submit" class="btn primary">登录</button>
     </form>
 
-    <div class="auth-foot">
-      演示账号：<code>admin</code> / <code>Admin@12345</code>（管理员）、
-      <code>1001</code> / <code>Staff@12345</code>（员工）。<br>
-      首次登录会强制修改密码，密码连续输错 5 次锁定 10 分钟。
+    <div class="emp-foot">
+      账号由设备科统一发放。首次登录会要求修改初始密码，连续输错 5 次锁定 10 分钟。
     </div>
-  </div>
-</div>
+  </section>
+</main>
 </body>
 </html>
