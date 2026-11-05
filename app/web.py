@@ -988,6 +988,12 @@ _STATUS_LABELS = {
     "active": "启用", "disabled": "停用",
 }
 
+# 不进「变更」列的字段。
+# 前两个是实现细节：active_flag 只有 'a' 和 NULL 两种值，写出来是「占用标记 a → —」，
+# 管理员看不出这跟他有什么关系；reason 已经在标记页单独展示。
+# 后四个是 UUID 与创建时间：UUID 摊在表格里没人读，创建时间在这行左边已经有一列。
+_LOG_HIDDEN = {"reason", "active_flag", "id", "created_at", "device_id", "user_id"}
+
 # 动作码 → 人话。日志页是给管理员看的，不是给开发者看的。
 _ACTION_LABELS = {
     "booking.create": "创建预约",
@@ -1021,6 +1027,10 @@ def _pretty(value: Any) -> str:
         return "—"
     if isinstance(value, str) and value in _STATUS_LABELS:
         return _STATUS_LABELS[value]
+    # 库里存的是 2026-11-04T19:48:00+08:00。整串塞进表格既不换行也读不动，
+    # 压成「11-04 19:48」：年份在看日志这件事上几乎从来不是变量。
+    if isinstance(value, str) and len(value) >= 16 and value[4] == "-" and value[10] == "T":
+        return value[5:16].replace("T", " ")
     return str(value)
 
 
@@ -1051,7 +1061,7 @@ def _diff_brief(before_json: str | None, after_json: str | None) -> str:
 
     changes: list[str] = []
     for key, new_value in after.items():
-        if key == "reason":
+        if key in _LOG_HIDDEN:
             continue
         old_value = before.get(key)
         if old_value != new_value:

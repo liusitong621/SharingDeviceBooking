@@ -50,7 +50,11 @@
     <tbody>
       {% for log in logs %}
       <tr>
-        <td class="mono" style="color:var(--muted);font-size:12px">{{ log.created_at }}</td>
+        {# 日期和时间分两行：整串 ISO 时间在 170px 里会被浏览器拆成
+           「2026-11-」「05T20:48:36+08:00」，比换行更难看。 #}
+        <td class="mono nowrap" style="color:var(--muted);font-size:12px;line-height:1.5">
+          {{ log.created_at[:10] }}<br>{{ log.created_at[11:19] }}
+        </td>
         <td>
           <span class="mono">{{ log.actor_label }}</span>
           {% if log.ip %}<div style="color:var(--muted);font-size:11px">{{ log.ip }}</div>{% endif %}

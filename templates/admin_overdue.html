@@ -32,8 +32,8 @@
     <tbody>
       {% for b in lists.awaiting_pickup %}
       <tr>
-        <td class="mono">{{ b.slot_date }}</td>
-        <td class="mono">{{ b.slot_start }}–{{ b.slot_end }}</td>
+        <td class="mono nowrap">{{ b.slot_date }}</td>
+        <td class="mono nowrap">{{ b.slot_start }}–{{ b.slot_end }}</td>
         <td>
           <strong>{{ b.device_name }}</strong>
           <div style="color:var(--muted);font-size:12px">{{ b.asset_no }} · {{ b.location or '—' }}</div>
@@ -82,8 +82,8 @@
     <tbody>
       {% for b in lists.not_returned %}
       <tr>
-        <td class="mono">{{ b.slot_date }}</td>
-        <td class="mono">{{ b.slot_start }}–{{ b.slot_end }}</td>
+        <td class="mono nowrap">{{ b.slot_date }}</td>
+        <td class="mono nowrap">{{ b.slot_start }}–{{ b.slot_end }}</td>
         <td>
           <strong>{{ b.device_name }}</strong>
           <div style="color:var(--muted);font-size:12px">{{ b.asset_no }} · {{ b.location or '—' }}</div>
@@ -92,7 +92,8 @@
           {{ b.user_name }}
           <div style="color:var(--muted);font-size:12px">{{ b.emp_no }} · {{ b.dept or '—' }}</div>
         </td>
-        <td class="mono" style="color:var(--muted)">{{ b.picked_at or '—' }}</td>
+        <td class="mono nowrap" style="color:var(--muted)">{{
+          b.picked_at[:16] | replace('T', ' ') if b.picked_at else '—' }}</td>
         <td class="num">
           <form method="post" action="/admin/bookings/{{ b.id }}/force-close" style="display:flex;gap:6px;justify-content:flex-end">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -130,8 +131,8 @@
     <tbody>
       {% for b in lists.missed_recent %}
       <tr>
-        <td class="mono">{{ b.slot_date }}</td>
-        <td class="mono">{{ b.slot_start }}–{{ b.slot_end }}</td>
+        <td class="mono nowrap">{{ b.slot_date }}</td>
+        <td class="mono nowrap">{{ b.slot_start }}–{{ b.slot_end }}</td>
         <td>{{ b.device_name }}<span style="color:var(--muted);font-size:12px"> · {{ b.asset_no }}</span></td>
         <td>
           {{ b.user_name }}

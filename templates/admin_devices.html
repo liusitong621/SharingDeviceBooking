@@ -83,9 +83,9 @@
       <tr>
         <th style="width:110px">资产编号</th>
         <th>设备</th>
-        <th style="width:150px">位置</th>
+        <th style="width:172px">位置</th>
         <th style="width:88px">状态</th>
-        <th style="width:250px">今日时段</th>
+        <th style="width:322px">今日时段</th>
         <th style="width:210px" class="num">操作</th>
       </tr>
     </thead>
@@ -97,7 +97,7 @@
           <strong>{{ d.name }}</strong>
           <div style="color:var(--muted);font-size:12px">{{ d.model or '—' }}</div>
         </td>
-        <td style="color:var(--ink-2)">{{ d.location or '—' }}</td>
+        <td class="nowrap" style="color:var(--ink-2)">{{ d.location or '—' }}</td>
         <td>
           {% if d.status == 'available' %}<span class="badge ok">可借</span>
           {% elif d.status == 'borrowed' %}<span class="badge brand">借出中</span>

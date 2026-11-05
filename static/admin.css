@@ -779,15 +779,18 @@ input[type="file"]::file-selector-button:hover {
 .err-card p { margin: 0 0 20px; color: var(--muted); font-size: 13px; }
 
 /* ---------------------------------------------------- 时段标签（表格内） */
-.slot-row { display: flex; flex-wrap: wrap; gap: 5px; }
+/* 6 个格子要能挤在同一行。250px 时浏览器算出 5+1，最后那个 18:00 单独掉下去，
+   看起来像"今天只有 5 格"。把内边距和字距收紧，6 个刚好一行，
+   行高也不因此变高——设备台账 12 行，每行多一行会白拉长半屏。 */
+.slot-row { display: flex; flex-wrap: wrap; gap: 4px; }
 .slot {
-  padding: 1px 6px;
+  padding: 1px 4px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   background: var(--panel-2);
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10.5px;
   font-variant-numeric: tabular-nums;
 }
 .slot.free { background: var(--ok-soft); border-color: var(--ok-line); color: var(--ok); }

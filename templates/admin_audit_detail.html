@@ -141,15 +141,23 @@
       <tr>
         <td class="mono" style="font-size:12px">{{ tool_labels.get(p.action, p.action) }}<div style="color:var(--muted);font-size:11px">{{ p.action }}</div></td>
         <td style="font-size:12.5px;line-height:1.7">
-          {% for k, v in p.summary.items() %}
-          <span style="color:var(--muted)">{{ k }}:</span> {{ v }}{% if not loop.last %} · {% endif %}
-          {% endfor %}
-          {% if not p.summary %}<span style="color:var(--muted)">（无摘要）</span>{% endif %}
+          {# 摘要是人读的，不是给人看 JSON 的：
+             设备、日期时段、后果三行足够回答「模型想干什么」。
+             kind / title / count / expires_at 属于程序字段，摊出来只是噪音。 #}
+          {% if p.summary.asset_no %}
+          <strong>{{ p.summary.asset_no }}</strong> {{ p.summary.device_name or '' }}
+          <div class="mono" style="font-size:12px">{{ p.summary.slot_date or '' }} {{ p.summary.slot_text or '' }}</div>
+          {% if p.summary.effect %}<div style="color:var(--muted);font-size:12px">{{ p.summary.effect }}</div>{% endif %}
+          {% else %}
+            {% for k, v in p.summary.items() %}
+            <span style="color:var(--muted)">{{ k }}:</span> {{ v }}{% if not loop.last %} · {% endif %}
+            {% endfor %}
+          {% endif %}
         </td>
         <td><span class="badge {{ p.status_tone }}">{{ p.status_label }}</span></td>
-        <td class="mono" style="font-size:11.5px;color:var(--muted)">
-          建 {{ p.created_at[:16].replace('T', ' ') }}<br>
-          {% if p.decided_at %}决 {{ p.decided_at[:16].replace('T', ' ') }}{% endif %}
+        <td class="mono nowrap" style="font-size:11.5px;color:var(--muted)">
+          建 {{ p.created_at[5:16].replace('T', ' ') }}<br>
+          {% if p.decided_at %}决 {{ p.decided_at[5:16].replace('T', ' ') }}{% endif %}
         </td>
       </tr>
       {% endfor %}

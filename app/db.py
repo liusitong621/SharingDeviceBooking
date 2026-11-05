@@ -853,7 +853,10 @@ async def list_messages(session_id: str, limit: int = 200) -> list[dict[str, Any
     def _run() -> list[dict[str, Any]]:
         with _connect() as conn:
             rows = conn.execute(
-                "SELECT id, role, content, status, citations, model, latency_ms, created_at "
+                # trace_id 必须带出来：审计详情页靠它认出「这一轮的问题与回答」。
+                # 之前漏选这一列，页面上永远是「本次没有产生回答」——
+                # 界面不报错，只是悄悄少了一句，这种缺列比崩溃更难发现。
+                "SELECT id, role, content, status, citations, model, latency_ms, trace_id, created_at "
                 "FROM chat_messages WHERE session_id = ? "
                 "ORDER BY created_at ASC, rowid ASC LIMIT ?",
                 (session_id, limit),
