@@ -30,6 +30,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app import auth, booking_service, db
+from app.agent import prompts
+from app.agent.tools import build_today_hint
 from app.auth import current_user
 from app.domain import slots as slot_rules
 from app.errors import ApiError
@@ -919,6 +921,7 @@ _ACTION_LABELS = {
     "user.disable": "停用账号",
     "user.enable": "启用账号",
     "user.reset_password": "重置密码",
+    "prompt.publish": "发布提示词",
 }
 
 
@@ -985,7 +988,7 @@ async def admin_logs(request: Request) -> HTMLResponse:
     action = qp.get("action") or None
 
     rows = await db.list_op_logs(
-        target_type=target_type if target_type in ("booking", "device", "user") else None,
+        target_type=target_type if target_type in ("booking", "device", "user", "prompt") else None,
         target_id=target_id.strip() if target_id and target_id.strip() else None,
         action=action.strip() if action and action.strip() else None,
         limit=300,
@@ -1002,4 +1005,217 @@ async def admin_logs(request: Request) -> HTMLResponse:
             "logs": rows,
             "filters": {"target_type": target_type or "", "target_id": target_id or "", "action": action or ""},
         },
+    )
+
+
+# =============================================================================
+# 提示词模板（批次 3）
+# -----------------------------------------------------------------------------
+# 这一页要解决的不是"能改"，而是"敢改"。
+# 敢改需要三样东西，缺一样管理员就会退回去改代码：
+#   1) 改之前能看见效果 —— 预览按钮，用真实日期渲染一遍；
+#   2) 改坏了能退回去   —— 版本历史 + 一键回滚，回滚也是追加而不是覆盖；
+#   3) 改错了能查到是谁 —— 每次发布都进 op_logs，动作码 prompt.publish。
+# 只做第 1 条，管理页就是个危险的文本框；三条齐了，它才是个可以交给别人用的工具。
+# =============================================================================
+
+
+async def _prompt_versions(tpl_key: str, limit: int = 20) -> list[dict[str, Any]]:
+    """版本列表。内容不整段传给模板——20 个版本 × 2500 字会把页面撑爆。"""
+    rows = await db.list_prompt_versions(tpl_key, limit=limit)
+    for r in rows:
+        content = r.get("content") or ""
+        first_line = next((ln.strip() for ln in content.splitlines() if ln.strip()), "")
+        r["preview"] = first_line[:70]
+        r["chars"] = len(content)
+        r["lines"] = content.count("\n") + 1 if content else 0
+    return rows
+
+
+async def _prompt_edit_page(
+    request: Request,
+    user: dict,
+    tpl_key: str,
+    *,
+    content: str | None = None,
+    note: str = "",
+    error: str | None = None,
+    notice: str | None = None,
+    warnings: list[str] | None = None,
+    preview: str | None = None,
+    active_version: int | None = None,
+) -> HTMLResponse:
+    active = await db.active_prompt(tpl_key)
+    versions = await _prompt_versions(tpl_key)
+    body = content if content is not None else (active["content"] if active else prompts.DEFAULT_TEMPLATE)
+    return render(
+        request,
+        "admin_prompts.html",
+        {
+            "user": user,
+            "tpl_key": tpl_key,
+            "tpl_label": prompts.PROMPT_KEY_LABELS[tpl_key],
+            "active": active,
+            "versions": versions,
+            "content": body,
+            "note": note,
+            "error": error,
+            "notice": notice,
+            "warnings": warnings or [],
+            "preview": preview,
+            "placeholders": prompts.PLACEHOLDERS,
+            "max_chars": prompts.MAX_TEMPLATE_CHARS,
+            "active_version": active_version if active_version is not None else (active["version"] if active else None),
+        },
+    )
+
+
+def _is_known_prompt_key(tpl_key: str) -> bool:
+    return tpl_key in prompts.PROMPT_KEY_LABELS
+
+
+@router.get("/admin/prompts", response_class=HTMLResponse)
+async def admin_prompts_index(request: Request) -> HTMLResponse:
+    """模板清单。目前只有系统提示词一条，但结构按"会有多条"来写。"""
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    items: list[dict[str, Any]] = []
+    for key, label in prompts.PROMPT_KEY_LABELS.items():
+        active = await db.active_prompt(key)
+        versions = await db.list_prompt_versions(key, limit=1)
+        items.append(
+            {
+                "key": key,
+                "label": label,
+                "active": active,
+                "version_count": len(await db.list_prompt_versions(key, limit=200)),
+                "last": versions[0] if versions else None,
+            }
+        )
+    return render(request, "admin_prompts_index.html", {"user": user, "items": items})
+
+
+@router.get("/admin/prompts/{tpl_key}", response_class=HTMLResponse)
+async def admin_prompt_edit(request: Request, tpl_key: str) -> HTMLResponse:
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+    if not _is_known_prompt_key(tpl_key):
+        return render(request, "error.html", {"user": user, "code": 404, "message": "没有这个提示词模板"}, 404)
+
+    qp = request.query_params
+    notice = None
+    if qp.get("ok") == "publish":
+        notice = f"已发布 v{qp.get('v', '?')}，下一次提问立即生效（无需重启）"
+    elif qp.get("ok") == "rollback":
+        notice = f"已按 v{qp.get('from', '?')} 的内容生成 v{qp.get('v', '?')}，下次提问生效"
+
+    return await _prompt_edit_page(request, user, tpl_key, notice=notice)
+
+
+@router.post("/admin/prompts/{tpl_key}/preview", response_class=HTMLResponse)
+async def admin_prompt_preview(request: Request, tpl_key: str) -> HTMLResponse:
+    """
+    预览：用**真实的**日期提示渲染一遍，管理员看到的就是模型看到的那段文字。
+    用固定示例日期会让"今天是几号"看起来永远正确，反而掩盖了占位符拼错的问题。
+    """
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+    if not _is_known_prompt_key(tpl_key):
+        return render(request, "error.html", {"user": user, "code": 404, "message": "没有这个提示词模板"}, 404)
+
+    form = await request.form()
+    content = str(form.get("content") or "")
+    note = _clean(form.get("note"), 120)
+
+    errors, warnings = prompts.validate_template(content)
+    if errors:
+        # 有错误也照样渲染：管理员需要看到"错在哪一行、渲染出来什么后果"，
+        # 而不是一个红条加一个空预览框。
+        return await _prompt_edit_page(
+            request, user, tpl_key, content=content, note=note,
+            error="；".join(errors), warnings=warnings,
+            preview=prompts.system_prompt(build_today_hint(), content),
+        )
+
+    return await _prompt_edit_page(
+        request, user, tpl_key, content=content, note=note,
+        warnings=warnings,
+        notice="这是预览，尚未发布",
+        preview=prompts.system_prompt(build_today_hint(), content),
+    )
+
+
+@router.post("/admin/prompts/{tpl_key}/save")
+async def admin_prompt_save(request: Request, tpl_key: str):
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+    if not _is_known_prompt_key(tpl_key):
+        return render(request, "error.html", {"user": user, "code": 404, "message": "没有这个提示词模板"}, 404)
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    content = str(form.get("content") or "")
+    note = _clean(form.get("note"), 120)
+
+    errors, warnings = prompts.validate_template(content)
+    if errors:
+        return await _prompt_edit_page(
+            request, user, tpl_key, content=content, note=note,
+            error="；".join(errors), warnings=warnings,
+        )
+
+    try:
+        result = await db.publish_prompt(
+            tpl_key=tpl_key, content=content, note=note or None, actor=user, ip=_ip(request)
+        )
+    except ApiError as exc:
+        return await _prompt_edit_page(
+            request, user, tpl_key, content=content, note=note,
+            error=exc.message, warnings=warnings,
+        )
+
+    logger.info("管理员 %s 发布提示词 %s v%s", user.get("emp_no"), tpl_key, result["version"])
+    return RedirectResponse(f"/admin/prompts/{tpl_key}?ok=publish&v={result['version']}", status_code=302)
+
+
+@router.post("/admin/prompts/{tpl_key}/rollback")
+async def admin_prompt_rollback(request: Request, tpl_key: str):
+    """
+    回滚 = 复制旧内容成新版本。
+
+    页面上写的是"回滚到 v3"，而库里发生的是"发布了 v9（内容同 v3）"。
+    这个差别必须让管理员看见，否则他下次看到版本号跳到 9 会以为谁又改了一版。
+    """
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+    if not _is_known_prompt_key(tpl_key):
+        return render(request, "error.html", {"user": user, "code": 404, "message": "没有这个提示词模板"}, 404)
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    raw = form.get("version")
+    try:
+        version = int(str(raw))
+    except (TypeError, ValueError):
+        return await _prompt_edit_page(request, user, tpl_key, error="版本号不正确")
+
+    try:
+        result = await db.rollback_prompt(tpl_key=tpl_key, version=version, actor=user, ip=_ip(request))
+    except ApiError as exc:
+        return await _prompt_edit_page(request, user, tpl_key, error=exc.message)
+
+    logger.info("管理员 %s 回滚提示词 %s 到 v%s（新版本 v%s）",
+                user.get("emp_no"), tpl_key, version, result["version"])
+    return RedirectResponse(
+        f"/admin/prompts/{tpl_key}?ok=rollback&v={result['version']}&from={version}", status_code=302
     )

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}提示词模板{% endblock %}
+{% block heading %}提示词模板{% endblock %}
+{% block subheading %}改措辞不用改代码、不用重启 · 每次发布都可回滚{% endblock %}
+
+{% block body %}
+<div class="card">
+  {% for item in items %}
+  <div class="card-bd tpl-row">
+    <div class="tpl-row-main">
+      <div class="tpl-row-title">
+        <strong>{{ item.label }}</strong>
+        <code class="mono">{{ item.key }}</code>
+        {% if item.active %}
+        <span class="badge ok">启用中 v{{ item.active.version }}</span>
+        {% else %}
+        <span class="badge warn">内置模板</span>
+        {% endif %}
+      </div>
+      <div class="tpl-row-sub">
+        {% if item.active %}
+        最后发布 {{ item.active.created_at }}
+        {% if item.active.note %}· {{ item.active.note }}{% endif %}
+        {% else %}
+        尚未入库，对话当前使用代码里的内置模板
+        {% endif %}
+        · 共 {{ item.version_count }} 个版本
+      </div>
+    </div>
+    <a href="/admin/prompts/{{ item.key }}" class="btn primary">编辑</a>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-bd" style="color:var(--muted);font-size:13px;line-height:1.8">
+    提示词存在数据库里，<strong style="color:var(--ink-2)">每一轮对话开始前重新读取</strong>，
+    所以发布后面上下一次提问就用新版本，不需要重启服务。
+    数据库不可用或模板被写坏时自动回落内置模板——助手答得差一点，好过整站 500。
+  </div>
+</div>
+{% endblock %}

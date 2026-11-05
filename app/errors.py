@@ -64,6 +64,10 @@ ERROR_TABLE: dict[str, tuple[int, str]] = {
     "INVALID_RETURN_TIME": (400, "归还时间不合法"),
     # --- 账号管理（R08）---
     "USER_NOT_FOUND": (404, "账号不存在"),
+    # --- 提示词模板（批次 3）---
+    "PROMPT_VERSION_CONFLICT": (409, "已有别人同时修改了这份模板，请刷新后重试"),
+    "PROMPT_VERSION_NOT_FOUND": (404, "该版本不存在"),
+    "PROMPT_INVALID": (400, "提示词内容不合法"),
     # --- 智能体校验凭证（T5 → T6）---
     "VALIDATION_REQUIRED": (400, "请先校验时段再发起预约"),
     "VALIDATION_NOT_FOUND": (404, "校验凭证不存在，请重新校验时段"),

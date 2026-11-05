@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}{{ tpl_label }}{% endblock %}
+{% block heading %}{{ tpl_label }}{% endblock %}
+{% block subheading %}发布即生效，无需重启 · 每次发布都留版本，可回滚{% endblock %}
+
+{% block actions %}
+<a href="/admin/prompts" class="btn">返回清单</a>
+{% endblock %}
+
+{% block body %}
+{% if error %}
+<div class="card" style="border-color:var(--danger);margin-bottom:16px">
+  <div class="card-bd" style="color:var(--danger)">{{ error }}</div>
+</div>
+{% endif %}
+{% if notice %}
+<div class="card" style="border-color:var(--ok);margin-bottom:16px">
+  <div class="card-bd" style="color:var(--ink-2)">{{ notice }}</div>
+</div>
+{% endif %}
+
+{# 编辑器与预览共用一个 textarea：拆成两个表单会让"我预览的是哪一版"变成猜测题。
+   两个按钮靠 formaction 分流到不同后端路由，method 都是 POST。 #}
+<form method="post" action="/admin/prompts/{{ tpl_key }}/save">
+  <input type="hidden" name="_csrf" value="{{ csrf }}">
+
+  <div class="card">
+    <div class="card-hd">
+      <h2>模板正文</h2>
+      {% if active %}
+      <span class="badge ok">启用中 v{{ active.version }}</span>
+      {% else %}
+      <span class="badge warn">未入库 · 当前使用内置模板</span>
+      {% endif %}
+    </div>
+    <div class="card-bd">
+      <textarea name="content" rows="26" spellcheck="false" class="tpl-editor">{{ content }}</textarea>
+
+      <div class="tpl-meta">
+        <div class="tpl-ph">
+          <strong>可用占位符</strong>
+          {% for name, desc in placeholders.items() %}
+          <span class="ph"><code>{{ '{' }}{{ name }}{{ '}' }}</code> {{ desc }}</span>
+          {% endfor %}
+          <span class="tpl-hint">
+            写错成别的 <code>{xxx}</code> 会被拦下——它不会被替换，会原样出现在模型眼前。
+            正文里的 JSON 示例（带引号和冒号）不受影响。
+          </span>
+        </div>
+        <label class="tpl-note">
+          这次改了什么
+          <input type="text" name="note" value="{{ note }}" maxlength="120"
+                 placeholder="例：收紧引用要求，禁止用常识补全">
+        </label>
+      </div>
+
+      {% if warnings %}
+      <div class="tpl-warn">
+        {% for w in warnings %}<div>· {{ w }}</div>{% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="tpl-actions">
+        <span class="tpl-count">{{ content|length }} 字 · 上限 {{ max_chars }}</span>
+        <button type="submit" class="btn" formaction="/admin/prompts/{{ tpl_key }}/preview" formnovalidate>预览渲染</button>
+        <button type="submit" class="btn primary">发布新版本</button>
+      </div>
+    </div>
+  </div>
+</form>
+
+{% if preview %}
+<div class="card" style="margin-top:16px">
+  <div class="card-hd">
+    <h2>渲染结果</h2>
+    <span class="badge mute">这就是模型看到的系统提示词</span>
+  </div>
+  <div class="card-bd">
+    <pre class="tpl-preview">{{ preview }}</pre>
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-hd">
+    <h2>版本历史</h2>
+    <span class="badge mute">最多显示 20 条</span>
+  </div>
+  {% if versions %}
+  <table>
+    <thead>
+      <tr>
+        <th style="width:80px">版本</th>
+        <th style="width:170px">发布时间</th>
+        <th style="width:100px">操作人</th>
+        <th>说明 / 首行</th>
+        <th style="width:90px" class="num">字数</th>
+        <th style="width:90px" class="num">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in versions %}
+      <tr>
+        <td class="mono">
+          v{{ v.version }}
+          {% if v.status == 'active' %}<div><span class="badge ok">启用中</span></div>{% endif %}
+        </td>
+        <td class="mono" style="color:var(--muted);font-size:12px">{{ v.created_at }}</td>
+        <td class="mono" style="font-size:12px">
+          {% if v.created_by %}{{ v.created_by[:8] }}…{% else %}系统{% endif %}
+        </td>
+        <td>
+          {% if v.note %}<div style="font-size:12.5px;color:var(--ink-2)">{{ v.note }}</div>{% endif %}
+          <details class="tpl-detail">
+            <summary>{{ v.preview }}</summary>
+            <pre class="tpl-preview sm">{{ v.content }}</pre>
+          </details>
+        </td>
+        <td class="num mono" style="font-size:12px">{{ v.chars }}</td>
+        <td class="num">
+          {% if v.status == 'active' %}
+          <span style="color:var(--muted);font-size:12px">当前</span>
+          {% else %}
+          <form method="post" action="/admin/prompts/{{ tpl_key }}/rollback" style="display:inline">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <input type="hidden" name="version" value="{{ v.version }}">
+            <button type="submit" class="btn sm">回滚</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">
+    还没有任何入库版本，当前对话使用内置模板。
+    上面正文框里就是内置模板的原文，改完发布即可接管。
+  </div>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-bd" style="color:var(--muted);font-size:13px;line-height:1.8">
+    <strong style="color:var(--ink-2)">回滚不是撤销。</strong>
+    回滚到 v3，实际发生的是"用 v3 的内容发布了一个新版本"——
+    版本号只增不减，所以"v9 是回滚 v3 得到的"这句话永远成立。
+    如果直接让 v3 重新变为启用，库里就会同时存在"当前是 v3"和"最新是 v9"两个事实，
+    谁也说不清中间那几次修改还算不算数。<br>
+    <strong style="color:var(--ink-2)">每轮对话都会记下用的版本号</strong>（<code>agent_runs.prompt_version</code>），
+    将来要对比"换模板前后回答质量"，靠的就是这一列。
+  </div>
+</div>
+{% endblock %}

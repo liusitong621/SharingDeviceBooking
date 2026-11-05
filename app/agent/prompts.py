@@ -1,18 +1,49 @@
 """
-系统提示词。
+系统提示词：内置模板 + 入库模板的加载、校验与渲染。
 
-刻意放在独立文件而不是写死在 harness 里，原因是：
-下一批要做「提示词模板管理页」，届时只需把 `system_prompt()` 改成"先读数据库、
-读不到再回落到 DEFAULT_TEMPLATE"，harness 一行都不用动。
+三段职责分得很清楚，混在一起就会出问题：
 
-第一版为什么不直接读库：现在改了也没人看得到效果差异，而先把**模板结构**
-定下来（哪几段、每段管什么），比提前接一个没人用的管理页更有价值。
+  1) DEFAULT_TEMPLATE —— 内置兜底。数据库里没有启用版本时用它，
+     数据库整张表被清空、模板被写坏、迁移失败，对话都必须还能跑。
+     **提示词坏了不能等于服务不可用**，这是这个模块的第一原则。
+  2) validate_template —— 纯函数，不碰库。管理页保存前调用，
+     也用于单测。规则只有一条值得较真：未知占位符。
+  3) system_prompt / load_system_prompt —— 渲染。占位符替换在这里完成。
+
+为什么用 {占位符} 而不是 f-string：占位符是**存进数据库的稳定契约**，
+f-string 的变量名一改，库里所有历史版本立刻失效，而且没有任何编译期报错。
 """
 
 from __future__ import annotations
 
-# 模板用占位符而不是 f-string：将来存进数据库时，占位符是稳定契约，
-# f-string 的变量名一旦改动，库里存的所有历史模板都会失效。
+import logging
+import re
+from typing import Any
+
+from app import db
+
+logger = logging.getLogger("app.agent.prompts")
+
+# 目前只有一个系统提示词。用 key 而不是"唯一一行"，
+# 是因为将来工具描述、摘要提示词也要入库，届时加 key 即可，表结构不动。
+PROMPT_KEY = "agent_system"
+
+PROMPT_KEY_LABELS = {
+    "agent_system": "对话系统提示词",
+}
+
+# 白名单。**只允许这两个**：多一个占位符，就多一处"渲染时忘了替换、
+# 原样漏进提示词"的机会，而模型确实会把 {max_slots} 当成要复述的文本。
+PLACEHOLDERS = {
+    "today_hint": "今天的日期与星期，以及可约日期范围",
+    "max_slots": "单日预约格数上限",
+}
+
+MAX_TEMPLATE_CHARS = 20000
+
+# 只匹配 {identifier} 形式；正文里的 JSON 示例 {"a": 1} 因为带引号和冒号不会被误伤。
+_PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
 DEFAULT_TEMPLATE = """你是公司共享设备借用助手。你的职责是回答借用制度、查空闲时段、协助发起预约。
 
 {today_hint}
@@ -56,19 +87,109 @@ request_booking 只是**发起**，不是**成功**。你不能说"已为您预�
 """
 
 
-def system_prompt(today_hint: str, template: str | None = None) -> str:
+# =============================================================================
+# 校验（纯函数，给管理页与单测共用）
+# =============================================================================
+
+
+def extract_placeholders(text: str) -> set[str]:
+    """取出模板里所有 {xxx} 形式的标识符。"""
+    return set(_PLACEHOLDER_RE.findall(text or ""))
+
+
+def validate_template(content: str) -> tuple[list[str], list[str]]:
+    """
+    返回 (errors, warnings)。
+
+    为什么分成两档而不是一律拦住：
+      - **未知占位符是错误**。它不会被替换，会原样出现在模型的系统提示词里，
+        模型很可能照着复述给用户；而且管理员从页面上看不出来，因为页面显示的是
+        "已保存成功"。这种"静默污染"必须拦住。
+      - **缺 {today_hint} 只是警告**。渲染时会自动追加日期，功能上不坏，
+        只是位置不理想。为了一个排版偏好拦住保存，管理员会绕路去改代码。
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    body = content or ""
+    if not body.strip():
+        errors.append("模板内容不能为空")
+        return errors, warnings
+
+    if len(body) > MAX_TEMPLATE_CHARS:
+        errors.append(f"模板过长（{len(body)} 字），上限 {MAX_TEMPLATE_CHARS} 字")
+
+    unknown = extract_placeholders(body) - set(PLACEHOLDERS)
+    if unknown:
+        usable = "、".join(f"{{{k}}}" for k in PLACEHOLDERS)
+        errors.append(f"未知占位符：{'、'.join('{' + u + '}' for u in sorted(unknown))}。可用：{usable}")
+
+    if "{today_hint}" not in body:
+        warnings.append("没有 {today_hint}，日期会被追加到末尾而不是你想放的位置")
+
+    if "{max_slots}" not in body:
+        warnings.append("没有 {max_slots}，额度上限写死成数字后，改配置会和正文对不上")
+
+    return errors, warnings
+
+
+# =============================================================================
+# 渲染
+# =============================================================================
+
+
+def system_prompt(today_hint: str, template: str | None = None, max_slots: int = 2) -> str:
     """
     渲染系统提示词。
 
-    template 参数是给「提示词入库」预留的入口：调用方从数据库取到启用中的模板后
-    传进来即可。模板里如果缺少 {today_hint} 占位符，就把它追加在末尾——
-    宁可格式不完美，也不能让模型不知道今天几号。
+    用 replace 而不是 str.format：模板正文里可能出现 JSON 示例 { }，
+    format 会把它们当占位符并抛 KeyError——而提示词里的示例 JSON
+    恰恰是必要的，不能为了渲染方便把它们禁掉。
     """
     body = template or DEFAULT_TEMPLATE
-    # 用 replace 而不是 str.format：模板正文里可能出现 JSON 示例 { }，
-    # format 会把它们当占位符并抛 KeyError。
+
     if "{today_hint}" in body:
         out = body.replace("{today_hint}", today_hint)
     else:
+        # 宁可排版不完美，也不能让模型不知道今天几号：它一旦算错日期，
+        # 后面所有日期参数的推理都会跟着错。
         out = f"{body}\n\n{today_hint}"
-    return out.replace("{max_slots}", "2")
+    return out.replace("{max_slots}", str(max_slots))
+
+
+async def load_system_prompt(today_hint: str, max_slots: int = 2) -> tuple[str, dict[str, Any]]:
+    """
+    取启用中的模板并渲染，返回 (提示词, 来源信息)。
+
+    来源信息要回传给调用方落库：`agent_runs` 里记下本轮用的是 v7 还是内置模板，
+    将来对照"换模板后回答质量变化"才有依据。没有这个字段，
+    提示词管理页就只是个编辑器，不是实验工具。
+
+    **读库失败一律回落内置模板**。数据库锁住、表被删、内容被手工写坏，
+    这些都不应该让用户看到 500——助手答得差一点，好过整站不可用。
+    """
+    try:
+        row = await db.active_prompt(PROMPT_KEY)
+    except Exception as exc:  # noqa: BLE001 —— 兜底路径，任何异常都必须回落
+        logger.warning("读取提示词模板失败，回落到内置模板：%s", exc)
+        return system_prompt(today_hint, None, max_slots), {"source": "builtin", "version": None}
+
+    if not row:
+        return system_prompt(today_hint, None, max_slots), {"source": "builtin", "version": None}
+
+    content = row.get("content") or ""
+    errors, _warnings = validate_template(content)
+    if errors:
+        # 库里有启用版本但内容非法（多半是有人直接改库）。
+        # 此时不能把它喂给模型，但也**不能自动降级成"删掉它"**：
+        # 那是管理员的数据，回落到内置模板并在日志里喊一声就够，
+        # 让他自己去管理页看见问题。
+        logger.error("启用中的提示词模板不合法（v%s），本轮回落内置模板：%s",
+                     row.get("version"), "；".join(errors))
+        return system_prompt(today_hint, None, max_slots), {
+            "source": "builtin", "version": None, "broken_version": row.get("version"),
+        }
+
+    return system_prompt(today_hint, content, max_slots), {
+        "source": "db", "version": int(row["version"]),
+    }

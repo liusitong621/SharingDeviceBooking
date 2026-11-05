@@ -408,3 +408,137 @@ a.stat:hover { border-color: #c7d9fb; background: #fcfdff; text-decoration: none
 @media (max-width: 900px) {
   .slot-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* ------------------------------------------------------------ 提示词模板页 */
+/* 编辑器是全文改写的场景，所以这一页只做一件事：让"改"看起来安全。
+   字体必须等宽——提示词里的缩进、占位符、{} 都是语义的一部分，
+   比例字体下 {today_hint} 和 { today_hint } 长得几乎一样。 */
+.tpl-editor {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--ink);
+  background: #fcfcfd;
+  resize: vertical;
+  tab-size: 2;
+}
+.tpl-editor:focus {
+  outline: none;
+  border-color: var(--brand);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .10);
+}
+
+.tpl-meta {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.tpl-ph { flex: 1; min-width: 300px; font-size: 12.5px; color: var(--muted); line-height: 1.9; }
+.tpl-ph strong { display: block; color: var(--ink-2); font-size: 12.5px; margin-bottom: 2px; }
+.tpl-ph .ph { display: inline-block; margin-right: 14px; }
+.tpl-ph code,
+.tpl-hint code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f2f3f5;
+  color: var(--brand);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+}
+.tpl-hint { display: block; margin-top: 4px; color: var(--muted); }
+
+.tpl-note {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 330px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.tpl-note input {
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: #fff;
+}
+.tpl-note input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+}
+
+/* 警告是橙色的，且**不挡提交**：缺 today_hint 只是排版问题，
+   用红色去拦一个不致命的问题，管理员下次就不看红色了。 */
+.tpl-warn {
+  margin-top: 12px;
+  padding: 10px 13px;
+  border: 1px solid #f0e0b8;
+  border-radius: 9px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+
+.tpl-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-2);
+}
+.tpl-count { flex: 1; font-size: 12px; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+
+.tpl-preview {
+  margin: 0;
+  padding: 14px 16px;
+  max-height: 460px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfbfc;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tpl-preview.sm { max-height: 280px; margin-top: 8px; font-size: 11.5px; }
+
+.tpl-detail summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+  list-style: none;
+}
+.tpl-detail summary::-webkit-details-marker { display: none; }
+.tpl-detail summary::before { content: "▸ "; }
+.tpl-detail[open] summary::before { content: "▾ "; }
+.tpl-detail summary:hover { color: var(--brand); }
+
+/* 清单页的一行：标题左、按钮右，窄屏自动堆叠 */
+.tpl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.tpl-row + .tpl-row { border-top: 1px solid var(--line-2); }
+.tpl-row-title { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.tpl-row-title strong { font-size: 14.5px; color: var(--ink); }
+.tpl-row-title code { font-size: 11.5px; color: var(--muted); }
+.tpl-row-sub { margin-top: 5px; font-size: 12.5px; color: var(--muted); }

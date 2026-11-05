@@ -28,7 +28,7 @@
       <a href="/admin/logs" class="{% if current_path.startswith('/admin/logs') %}on{% endif %}">操作日志</a>
       <div class="sep"></div>
       <a href="/admin/policies" class="soon">制度知识库 <span class="tag">待上线</span></a>
-      <a href="/admin/prompts" class="soon">提示词模板 <span class="tag">待上线</span></a>
+      <a href="/admin/prompts" class="{% if current_path.startswith('/admin/prompts') %}on{% endif %}">提示词模板</a>
       <a href="/admin/audit" class="soon">对话审计 <span class="tag">待上线</span></a>
       <div class="sep"></div>
       <a href="/">问答助手</a>

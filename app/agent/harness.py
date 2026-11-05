@@ -81,13 +81,21 @@ async def run(
     这样它能在 CLI 里跑、能在测试里跑、也能换一个传输层（WebSocket）复用。
     """
     started = time.perf_counter()
+
+    # 提示词必须在 start_run 之前取到：它决定 run 上要记哪个版本号。
+    # 反过来先 start_run 再读模板，就得 UPDATE 补一列，多一次写库且容易漏。
+    system_content, prompt_source = await prompts.load_system_prompt(tools.build_today_hint())
+
     run_id = await db.start_run(
-        ctx.session_id, ctx.user_id, question, ctx.trace_id, llm.model_name
+        ctx.session_id,
+        ctx.user_id,
+        question,
+        ctx.trace_id,
+        llm.model_name,
+        prompt_version=prompt_source.get("version"),
     )
 
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": prompts.system_prompt(tools.build_today_hint())}
-    ]
+    messages: list[dict[str, Any]] = [{"role": "system", "content": system_content}]
     # 历史里只保留成功消息（db.recent_messages 已过滤），否则模型会模仿半截话
     messages.extend({"role": m["role"], "content": m["content"]} for m in history)
     messages.append({"role": "user", "content": question})

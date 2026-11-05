@@ -178,6 +178,10 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     rounds      INTEGER NOT NULL DEFAULT 0,   -- 实际用掉的决策轮数，用于判断"5 轮够不够"
     total_ms    INTEGER,
     model       TEXT,
+    -- 本轮实际使用的提示词版本；NULL 表示用的是内置模板。
+    -- 没有这一列，提示词管理页就只是一个编辑器：改了之后回答变好还是变坏，
+    -- 永远无法和具体某一轮对话对上。
+    prompt_version INTEGER,
     error_code  TEXT,
     created_at  TEXT NOT NULL,
     finished_at TEXT
@@ -267,6 +271,38 @@ CREATE TABLE IF NOT EXISTS op_logs (
 CREATE INDEX IF NOT EXISTS idx_oplog_target ON op_logs(target_type, target_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_oplog_actor ON op_logs(actor_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_oplog_time ON op_logs(created_at);
+
+-- ===========================================================================
+-- 提示词模板（批次 3）
+-- ---------------------------------------------------------------------------
+-- 三条设计决定，每条都是被现实逼出来的：
+--
+--  1) **追加版本，不原地改。** 保存一次就插一行新版本，旧行转 archived。
+--     如果原地 UPDATE，就永远回答不了"上周回答变差是不是因为改了提示词"——
+--     而那恰好是唯一值得追问的问题。代价只是表变长，一行几 KB。
+--
+--  2) **每个 key 至多一个 active，交给数据库保证。**
+--     部分唯一索引 `WHERE status='active'` 与 bookings 的 active_flag 同一手法：
+--     应用层"先查再改"在多进程下会写出两个启用版本，而数据库不会。
+--
+--  3) **内容不入 op_logs。** 日志记"谁在什么时候发布了 v7、说明是什么"，
+--     全文留给本表按版本查。否则日志页会变成一面文字墙，
+--     而审计真正要看的是变更点，不是两千字正文。
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS prompt_templates (
+    id         TEXT PRIMARY KEY,
+    tpl_key    TEXT NOT NULL,                  -- agent_system / （后续可扩）
+    version    INTEGER NOT NULL,
+    content    TEXT NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'archived'
+               CHECK(status IN ('active','archived')),
+    note       TEXT,                           -- 本次修改说明，便于回看
+    created_by TEXT,                           -- 操作人 id；NULL 表示系统初始化
+    created_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_version ON prompt_templates(tpl_key, version);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_active  ON prompt_templates(tpl_key) WHERE status = 'active';
 """
 
 
@@ -411,6 +447,168 @@ async def booking_timeline(booking_id: str) -> list[dict[str, Any]]:
     return await list_op_logs(target_type="booking", target_id=booking_id, limit=100)
 
 
+# =============================================================================
+# 提示词模板（批次 3）
+# -----------------------------------------------------------------------------
+# 读路径刻意**每次查库**，不做进程内缓存。
+#
+# 理由：一次 SQLite 单行查询是微秒级，而一次对话要调一次大模型（秒级），
+# 差三个数量级。相比之下，缓存的代价是"改完不生效，要等缓存过期或重启"——
+# 那正是这一批要消灭的问题。用性能换正确性，在一次 LLM 调用面前是笔稳赚的买卖。
+#
+# 但如果哪天接入 Redis 或多进程部署，这里必须加带版本号的失效机制，
+# 不能简单把缓存加上去。
+# =============================================================================
+
+
+async def active_prompt(tpl_key: str) -> dict[str, Any] | None:
+    """取当前启用版本。没有则返回 None，由调用方回落到内置模板。"""
+
+    def _run() -> dict[str, Any] | None:
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM prompt_templates WHERE tpl_key = ? AND status = 'active'",
+                (tpl_key,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    return await asyncio.to_thread(_run)
+
+
+async def fetch_prompt_version(tpl_key: str, version: int) -> dict[str, Any] | None:
+    def _run() -> dict[str, Any] | None:
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM prompt_templates WHERE tpl_key = ? AND version = ?",
+                (tpl_key, version),
+            ).fetchone()
+            return dict(row) if row else None
+
+    return await asyncio.to_thread(_run)
+
+
+async def list_prompt_versions(tpl_key: str, limit: int = 30) -> list[dict[str, Any]]:
+    """
+    版本历史，新的在前。
+
+    只给 limit 不给 offset：模板半年改十次已经算频繁，翻不到第二页。
+    真要翻，说明该按 key 拆开了，而不是加页码。
+    """
+
+    def _run() -> list[dict[str, Any]]:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM prompt_templates WHERE tpl_key = ? "
+                "ORDER BY version DESC LIMIT ?",
+                (tpl_key, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    return await asyncio.to_thread(_run)
+
+
+async def publish_prompt(
+    *,
+    tpl_key: str,
+    content: str,
+    note: str | None,
+    actor: dict[str, Any] | None,
+    ip: str | None = None,
+) -> dict[str, Any]:
+    """
+    发布一个新版本并置为启用。
+
+    **整个动作在一个事务里**：算版本号 → 归档旧版 → 插新版 → 写日志。
+    四条语句分开提交的话，进程在两行之间挂掉，就会出现"没有启用版本"
+    （对话直接掉回内置模板，而管理员以为自己刚保存成功）。
+
+    并发两个管理员同时点保存：`uq_prompt_version` 唯一索引会让后到的那个
+    冲突报错，而不是两条都写成 v8。VersionConflict 由调用方转成可读提示。
+    """
+
+    def _run() -> dict[str, Any]:
+        now = _now()
+        pid = str(uuid.uuid4())
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(version), 0) AS v FROM prompt_templates WHERE tpl_key = ?",
+                (tpl_key,),
+            ).fetchone()
+            new_version = int(row["v"]) + 1
+
+            before = conn.execute(
+                "SELECT version FROM prompt_templates WHERE tpl_key = ? AND status = 'active'",
+                (tpl_key,),
+            ).fetchone()
+
+            conn.execute(
+                "UPDATE prompt_templates SET status = 'archived' "
+                "WHERE tpl_key = ? AND status = 'active'",
+                (tpl_key,),
+            )
+            conn.execute(
+                "INSERT INTO prompt_templates (id, tpl_key, version, content, status, note, "
+                "created_by, created_at) VALUES (?, ?, ?, ?, 'active', ?, ?, ?)",
+                (pid, tpl_key, new_version, content, note, actor.get("id") if actor else None, now),
+            )
+            _log(
+                conn,
+                actor=actor,
+                action="prompt.publish",
+                target_type="prompt",
+                target_id=tpl_key,
+                before={"version": int(before["version"])} if before else None,
+                after={"version": new_version, "chars": len(content), "note": note or ""},
+                ip=ip,
+            )
+            return {
+                "id": pid,
+                "tpl_key": tpl_key,
+                "version": new_version,
+                "chars": len(content),
+                "created_at": now,
+            }
+
+    try:
+        return await asyncio.to_thread(_run)
+    except sqlite3.IntegrityError as exc:
+        # 唯一索引冲突 = 另一个管理员刚刚发布了同一版本号。
+        # 这不是"服务器错误"，而是"你看到的内容已经旧了"，提示必须这么说。
+        raise ApiError(
+            "PROMPT_VERSION_CONFLICT",
+            "已有别人同时修改了这份模板，请刷新页面后重新编辑",
+            message="已有别人同时修改了这份模板，请刷新后重试",
+        ) from exc
+
+
+async def rollback_prompt(
+    *,
+    tpl_key: str,
+    version: int,
+    actor: dict[str, Any] | None,
+    ip: str | None = None,
+) -> dict[str, Any]:
+    """
+    回滚到某个历史版本。
+
+    实现方式是**把旧内容复制成新版本**，而不是把旧行改回 active。
+    区别在于可解释性：复制之后，版本号只增不减，"v9 是回滚 v3 得到的"
+    这句话永远成立；而把 v3 直接激活，会让"当前是 v3"和"最新是 v9"
+    同时为真，谁也说不清中间那六次修改还算不算数。
+    """
+    old = await fetch_prompt_version(tpl_key, version)
+    if old is None:
+        raise ApiError("PROMPT_VERSION_NOT_FOUND", f"没有 v{version} 这个版本", message="该版本不存在")
+
+    return await publish_prompt(
+        tpl_key=tpl_key,
+        content=old["content"],
+        note=f"回滚自 v{version}（原文：{old.get('note') or '无说明'}）",
+        actor=actor,
+        ip=ip,
+    )
+
+
 
 @contextmanager
 def _connect() -> Iterator[sqlite3.Connection]:
@@ -467,6 +665,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # 批次 2：设备改软删除。老库补列，新库由 SCHEMA 直接建出来。
     if "deleted_at" not in columns("devices"):
         conn.execute("ALTER TABLE devices ADD COLUMN deleted_at TEXT")
+
+    # 批次 3：记录本轮用的提示词版本。
+    # 老数据留 NULL（= 内置模板），符合事实——那些轮次确实没有入库模板。
+    if "prompt_version" not in columns("agent_runs"):
+        conn.execute("ALTER TABLE agent_runs ADD COLUMN prompt_version INTEGER")
 
 
 # =============================================================================
@@ -1683,7 +1886,12 @@ async def consume_validation(vid: str, user_id: str) -> dict[str, Any] | None:
 
 
 async def start_run(
-    session_id: str, user_id: str, question: str, trace_id: str | None, model: str | None
+    session_id: str,
+    user_id: str,
+    question: str,
+    trace_id: str | None,
+    model: str | None,
+    prompt_version: int | None = None,
 ) -> str:
     """开一次运行。返回 run_id，后续所有 step 都挂在它下面。"""
     run_id = str(uuid.uuid4())
@@ -1691,9 +1899,11 @@ async def start_run(
     def _run() -> str:
         with _connect() as conn:
             conn.execute(
-                "INSERT INTO agent_runs (id, session_id, user_id, trace_id, question, model, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (run_id, session_id, user_id, trace_id, question[:500], model, _now()),
+                "INSERT INTO agent_runs (id, session_id, user_id, trace_id, question, model, "
+                "prompt_version, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (run_id, session_id, user_id, trace_id, question[:500], model,
+                 prompt_version, _now()),
             )
             return run_id
 
