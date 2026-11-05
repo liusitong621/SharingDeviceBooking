@@ -70,11 +70,20 @@ python -m venv .venv
 | `1001` | `Staff@12345` | 员工 | `/login` |
 | `1002` | `Staff@12345` | 员工 | `/login` |
 
-跑测试（不需要启动服务）：
+跑一遍自检（不需要启动服务，也不用配模型）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -q      # 130 项
+./scripts/verify.sh      # 130 项单测 + R01–R08 逐条工具侧核对，有失败返回非零
 ```
+
+看它真的能跑（临时库，不碰 `data/chat.db`，跑完不留痕）：
+
+```bash
+.venv/bin/python examples/demo.py
+```
+
+它走完七幕：查空档 → 校验拿凭证 → 模型被拦 → 用户点确认 → 连点幂等 → 越权被拒 → 取消释放 → 审计还原。
+**全程不调用大模型**——它演示的是约束在哪里，不是模型有多聪明；装了模型之后同样的路径由模型驱动，边界一条不变。
 
 > **不配模型也能完整演示界面**：没有 `LLM_API_KEY` 时自动降级为「检索 + 原文直出」，不白屏、不伪造回答。
 > 但**降级模式不会走智能体循环**（没有模型就没有决策），也就看不到确认卡片。
@@ -289,8 +298,15 @@ CREATE UNIQUE INDEX uq_booking_slot ON bookings(device_id, slot_date, slot_start
 ## 测试
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -q
+./scripts/verify.sh                                   # 推荐：单测 + 需求核对
+.venv/bin/python -m unittest discover -s tests -q     # 只跑单测
 ```
+
+`scripts/verify.py` 在单测之外，按 R01–R08 各跑一条端到端断言：并发抢同一格、取消后他人能立即约、
+下架设备拒单、越权取消被拒、日志轨迹完整……输出一张 PASS/FAIL 表。
+
+> **它输出的 PASS 只代表工具侧可核对，不代表业务验收通过。**
+> 比如 R03 的 PASS 是"8 个并发只成了 1 单"，它证明不了"50 人同时抢也不出问题"——那需要压测。
 
 **130 个用例**，分六组：
 
@@ -371,6 +387,11 @@ docs/
   需求追溯.md               每条需求的实现位置、测试、证据与未完成项
   manuals/                  设备借用制度（RAG 语料）
 tests/                 6 个测试文件，130 项
-scripts/stage1_rag_prototype.py   阶段 1 单文件原型（检索核心模块唯一定义处）
+scripts/
+  verify.sh            自检入口（找 .venv 的 python，转调 verify.py）
+  verify.py            130 项单测 + R01–R08 工具侧核对，输出 PASS/FAIL 表
+  stage1_rag_prototype.py   阶段 1 单文件原型（检索核心模块唯一定义处）
+examples/
+  demo.py              端到端演示：七幕跑完一条 AI 预约的完整闭环（临时库，不接模型）
 requirements.txt       锁定版本的运行依赖
 ```
