@@ -68,6 +68,14 @@ ERROR_TABLE: dict[str, tuple[int, str]] = {
     "PROMPT_VERSION_CONFLICT": (409, "已有别人同时修改了这份模板，请刷新后重试"),
     "PROMPT_VERSION_NOT_FOUND": (404, "该版本不存在"),
     "PROMPT_INVALID": (400, "提示词内容不合法"),
+    # --- 制度知识库（批次 5）---
+    "KB_DOC_NOT_FOUND": (404, "这份制度文档不存在，请刷新后重试"),
+    "KB_DOC_BUILTIN": (409, "内置制度文档只能停用，不能删除"),
+    "KB_DOC_EXISTS": (409, "同名文件已存在，请先删除或改名后再上传"),
+    "KB_UPLOAD_INVALID": (400, "只支持 .md / .txt 文件，且内容不能为空"),
+    "KB_UPLOAD_TOO_LARGE": (413, "文件过大，制度文档请控制在 512KB 以内"),
+    "KB_REBUILD_FAILED": (500, "索引重建失败，检索仍在用上一次的索引"),
+    "KB_LAST_ACTIVE": (409, "至少要保留一份启用的制度文档，请先上传或启用其它文档"),
     # --- 智能体校验凭证（T5 → T6）---
     "VALIDATION_REQUIRED": (400, "请先校验时段再发起预约"),
     "VALIDATION_NOT_FOUND": (404, "校验凭证不存在，请重新校验时段"),

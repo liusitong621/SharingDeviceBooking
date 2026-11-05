@@ -1,7 +1,7 @@
 # SharingDeviceBooking
 
 共享设备借用系统。当前进度：**阶段 4 —— 智能体编排（Function Calling + 执行循环）**，
-配套后台批次 1–4（认证 / 运营所需 R01、R06–R08 / 提示词入库 / 对话审计）已完成。
+配套后台批次 1–5（认证 / 运营所需 R01、R06–R08 / 提示词入库 / 对话审计 / 制度知识库热更新）已完成。
 
 系统已从"固定流程问答"升级为"自主决策的智能体"：模型自己决定要不要检索、要不要查时段、
 要不要校验，但**写操作永远由人点击确认**。
@@ -37,7 +37,9 @@
   过期扫描只处理 `booked`，`picked` 的单不会自愈。
 - `/admin/users` 账号管理：批量导入（粘贴 CSV/Excel）、停用 / 启用、重置密码。
   重复工号**跳过且不改密码**，所以每周导全量名单是安全动作。
-- `/admin/logs` 操作日志：按预约 / 设备 / 账号 / 提示词查完整轨迹，只追加、无删除入口。
+- `/admin/logs` 操作日志：按预约 / 设备 / 账号 / 提示词 / 制度文档查完整轨迹，只追加、无删除入口。
+- `/admin/policies` 制度知识库：上传 md/txt 后**立即重建索引、不用重启**；
+  旧制度停用而非删除，改完可看切片、可一键重建。
 - `/admin/prompts` 提示词模板：在线改系统提示词，**发布即生效不用重启**；
   每次发布留版本、可预览、可回滚，发布动作进操作日志。
 - `/admin/audit` 对话审计：按员工 / 时间 / 状态筛选每一次提问，
@@ -98,6 +100,39 @@ R07 的三条硬约束：
 每轮对话把实际用的版本号记在 `agent_runs.prompt_version`（NULL = 内置），
 将来对比"换模板前后质量"靠的就是这一列。
 
+## 制度知识库热更新（批次 5）
+
+此前 `rag.warmup()` 只在进程启动时跑一次，`_kb` 一旦有值就再也不刷新：
+管理员改了制度文件，用户问到的还是旧条文，**除非重启服务**。
+制度每年都要改，这是唯一"业务上必然发生"的场景，所以必须解决。
+
+**语料留在磁盘上，只有元数据进库。** `docs/manuals/`（内置，随代码走 git）与
+`data/kb/uploads/`（后台上传）两个来源合并成一套索引；`kb_documents` 只登记
+文件名、来源、启停状态、切片数，**不存正文**。
+
+> 为什么不把切片存进数据库：制度文件要归档、盖章、交接，文件本身必须是唯一真相。
+> 切成 500 字片段存库，等于把"制度原文"降级成"检索片段"，
+> 日后要证明"当时那句原文是什么"就得从碎片里拼回去。
+
+**重建是先建后换，不是先清后建。** 整段在锁内跑，但 `_kb` 的赋值在最后一步：
+重建期间进来的检索继续用旧索引，看不到"建到一半"的状态；重建失败则保留旧索引，
+只是新内容检索不到。字典/制度写坏了，不该让问答整个挂掉。
+
+**停用，而不是删除。** 制度作废时正确动作是"不再被命中"，不是销毁原件——
+原件与切片规则都还在，一年后要追溯"当时为什么这么答"还能复现。
+删除只对上传文件开放（文件移到 `data/kb/.trash`，不是 unlink）；
+内置文档只能停用，否则网页上删掉会和 git 仓库产生静默分歧。
+
+**`on_disk` 与 `status` 拆成两列**：前者是事实（文件在不在，每次扫描刷新），
+后者是人的决定。合成一列，一次误删就会把"管理员主动停用"覆盖成"文件丢失"，
+两种完全不同的处置理由被抹平。
+
+**编码在入口处归一到 UTF-8。** 企业里大量制度是 Windows 上另存的 GBK，
+让人先去转码，实际结果是他把文件丢进聊天框说"你帮我弄一下"。上传时解码、统一存 UTF-8。
+
+**PDF 不支持。** PDF 解析常把表格拆散，而制度里的关键数字（"每天最多 2 格"）
+最容易在拆表时丢。与其给一个"上传成功但检索不到重点"的假功能，不如要求先转 markdown。
+
 ## 对话审计（批次 4）
 
 这一页回答的不是"系统跑得好不好"，而是三个具体到人的问题：
@@ -129,13 +164,19 @@ R07 的三条硬约束：
 
 ## 运行
 
+依赖全部锁定在 `requirements.txt`（Python 3.11+，验证环境 3.13.12）：
+
 ```bash
-uv venv .venv --python 3.13
-uv pip install --python .venv/bin/python numpy faiss-cpu rank-bm25 jieba httpx fastapi "uvicorn[standard]" pyjwt jinja2 python-multipart
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt
 
 .venv/bin/uvicorn app.main:app --port 8000
 # 打开 http://127.0.0.1:8000 → 会跳到 /login
 ```
+
+> 版本锁死的原因写在 `requirements.txt` 顶部：`faiss-cpu` 是对 `numpy` 的 C ABI 编译的，
+> 放开范围后一次 `pip install -U numpy` 就会让 faiss 在 import 时报 undefined symbol，
+> 而报错点在 faiss 内部，很难定位到是版本漂移。升级请整组一起升，并跑一遍测试。
 
 演示账号（**首次登录会强制改密**，密码规则见 `app/seed.py`）：
 
@@ -186,6 +227,11 @@ export JWT_SECRET=...             # 不设会自动生成并落盘到 data/.jwt_
 | GET | `/admin/logs` | 操作日志查询（可按 `target_id` 查单条轨迹） |
 | GET | `/admin/prompts` | 提示词模板清单 |
 | GET/POST | `/admin/prompts/{key}` | 编辑 / 预览 / 发布 / 回滚 |
+| GET | `/admin/policies` | 制度知识库列表 / 索引状态 / 切片预览（`?preview=<doc_key>`） |
+| POST | `/admin/policies/upload` | 上传 md/txt 并立即重建索引 |
+| POST | `/admin/policies/status` | 启用 / 停用某份制度（停用即退出检索） |
+| POST | `/admin/policies/delete` | 删除上传的制度（文件移到 `data/kb/.trash`） |
+| POST | `/admin/policies/rebuild` | 按磁盘现状重建索引（改了文件不用重启） |
 | GET | `/admin/audit` | 对话审计列表（按员工 / 状态 / 日期 / 标记筛选） |
 | GET | `/admin/audit/{run_id}` | 单次对话详情：工具轨迹、写意图结局、会话上下文 |
 | POST | `/admin/audit/{run_id}/flag` | 标记 / 撤销「需要跟进」 |
@@ -196,7 +242,7 @@ export JWT_SECRET=...             # 不设会自动生成并落盘到 data/.jwt_
 .venv/bin/python -m unittest discover -s tests -q
 ```
 
-112 个用例，分六组：
+130 个用例，分七组：
 
 - `test_slots.py`：时段规则与边界（纯函数，时间注入）
 - `test_harness.py`：智能体循环、中断、SSE 帧（脚本化假模型）
@@ -204,6 +250,8 @@ export JWT_SECRET=...             # 不设会自动生成并落盘到 data/.jwt_
   （归还必须释放格子、强制结束必须写日志、导入不得重置密码、日志不得含密码哈希）
 - `test_batch3.py`：占位符解析与校验、渲染、版本自增与归档、回滚追加、**模板坏了回落内置**
 - `test_batch4.py`：审计筛选（含"日期到当天"的差一天回归）、状态统计、标记不改动原始轨迹
+- `test_batch5.py`：文件名清洗、编码归一、**停用后切片真的消失**、
+  **重建失败保留旧索引**、`on_disk` 与 `status` 不被互相覆盖
 
 ## 智能体编排
 
@@ -283,8 +331,10 @@ CREATE UNIQUE INDEX uq_booking_slot ON bookings(device_id, slot_date, slot_start
 
 ## 语料
 
-- 手册放 `docs/manuals/`，**不要**和调研报告混在一个索引里——实测 223 个调研切片会把规程文档挤出 top3。
-- 可用 `RAG_DOCS_DIR` / `RAG_PATTERN` 覆盖默认值。
+- 内置手册放 `docs/manuals/`，**不要**和调研报告混在一个索引里——实测 223 个调研切片会把规程文档挤出 top3。
+- 后台上传的制度落在 `data/kb/uploads/`（不进 git），删除的文件移到 `data/kb/.trash/`。
+- 目录可用 `RAG_DOCS_DIR` / `RAG_UPLOAD_DIR` / `RAG_PATTERN` 覆盖；
+  改了磁盘上的文件之后，到 `/admin/policies` 点一次「重建索引」即可，**不用重启进程**。
 
 ## 目录
 
@@ -306,14 +356,17 @@ app/
     confirm.py         待确认动作的准备与执行（唯一碰 place_booking 的地方）
     prompts.py         系统提示词：内置模板 + 入库加载 + 占位符校验与渲染
   seed.py              首次启动的种子账号与设备
-  sse.py / llm.py / rag.py
+  sse.py / llm.py
+  rag.py               检索装配层：两路语料合并、可热重建的索引单例、上传清洗
 templates/             后台与登录页模板
 static/                聊天界面 + 后台样式
+requirements.txt       锁定版本的运行依赖
 tests/test_slots.py    时段规则单测
 tests/test_harness.py  执行循环、中断、确认、SSE 接线（用脚本化假模型）
 tests/test_batch2.py   占用视图四态、名单解析、日志摘要、状态机不变量
 tests/test_batch3.py   提示词占位符、版本、回滚、回落
 tests/test_batch4.py   审计筛选、统计、标记不影响原始轨迹
+tests/test_batch5.py   制度文档：清洗、编码、停用生效、失败保旧索引
 scripts/stage1_rag_prototype.py   阶段 1 单文件原型（检索核心模块唯一定义处）
 docs/manuals/          设备借用制度（RAG 语料）
 ```
@@ -328,4 +381,7 @@ docs/manuals/          设备借用制度（RAG 语料）
   要真流式需改成"决策非流式 + 收尾再发一次流式请求"，代价是多一次调用且两次回答可能不一致。
 - 待确认动作没有后台定时清理，靠 `expires_at` 惰性判定（`decide_pending` 里带过期条件）。
   量大了需要加一轮 `db.expire_pending()` 的定时任务。
-- 制度知识库管理尚未实现（后台导航里标了「待上线」）。
+- 检索索引是**进程内单例**：多 worker 部署时每个 worker 各自持有一份，
+  上传后只有处理该请求的 worker 会重建，其它 worker 要等重启或访问到重建接口。
+  真上多 worker 需要把索引外置（pgvector / 独立检索服务），`rag.search()` 是唯一改动点。
+- 上传只支持 `.md` / `.txt`（见上文 PDF 说明），单文件上限 512KB。

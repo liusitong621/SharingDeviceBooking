@@ -324,6 +324,41 @@ CREATE TABLE IF NOT EXISTS audit_flags (
     flagged_by TEXT,
     flagged_at TEXT NOT NULL
 );
+
+-- ===========================================================================
+-- 制度文档登记（批次 5）
+-- ---------------------------------------------------------------------------
+-- 语料的**实体**一直是磁盘上的 markdown 文件，这张表只登记它们的元数据与
+-- 启停状态，不存正文。为什么不做成"上传即入库"：
+--   制度文件是要归档、要盖章、要交接的，文件本身就该是唯一真相。
+--   把它切成 500 字片段存进库，等于把"制度原文"降级成"检索片段"，
+--   日后要证明"当时那句原文是什么"就得从碎片里拼。
+--
+-- 为什么停用是软操作而不是删文件：
+--   旧制度作废时，正确动作是"不再被检索到"，不是"销毁"。停用只改一行状态，
+--   一年后要追溯"当时为什么这么答"，原件还在，切片规则还能复现。
+--
+-- on_disk 与 status 拆开：
+--   前者是**事实**（文件在不在磁盘上，由每次扫描刷新），后者是**人的决定**。
+--   合成一列的话，一次误删就会把"管理员主动停用"覆盖成"文件丢失"，
+--   两种完全不同的处置理由被抹平。
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS kb_documents (
+    doc_key      TEXT PRIMARY KEY,             -- 相对路径：制度.md / uploads/xxx.md
+    display_name TEXT NOT NULL,                -- 页面展示用（上传的保留原始文件名）
+    origin       TEXT NOT NULL CHECK(origin IN ('builtin','uploaded')),
+    status       TEXT NOT NULL DEFAULT 'active'
+                 CHECK(status IN ('active','disabled')),
+    sha256       TEXT,
+    size_bytes   INTEGER NOT NULL DEFAULT 0,
+    chunks       INTEGER NOT NULL DEFAULT 0,   -- 上一次重建时的切片数
+    file_mtime   TEXT,
+    on_disk      INTEGER NOT NULL DEFAULT 1,
+    note         TEXT,
+    synced_at    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_kb_status ON kb_documents(status);
 """
 
 
@@ -2416,5 +2451,180 @@ async def stats(today: str, now: str | None = None) -> dict[str, int]:
                 (today, stamp, stamp),
             ).fetchone()
             return {k: int(row[k]) for k in row.keys()}
+
+    return await asyncio.to_thread(_run)
+
+
+# =============================================================================
+# 制度文档登记（批次 5）
+# -----------------------------------------------------------------------------
+# 这一节只有元数据，没有正文。正文永远是磁盘上的文件，理由见表结构处的注释。
+# 页面需要的信息全在这里：谁在磁盘上、谁被停用、各占多少切片。
+# =============================================================================
+
+
+async def list_kb_documents() -> list[dict[str, Any]]:
+    """全部登记过的制度文档，启用的排前面，同组按来源和文件名排。"""
+    def _run() -> list[dict[str, Any]]:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM kb_documents "
+                "ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, origin, display_name"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    return await asyncio.to_thread(_run)
+
+
+async def get_kb_document(doc_key: str) -> dict[str, Any] | None:
+    def _run() -> dict[str, Any] | None:
+        with _connect() as conn:
+            row = conn.execute("SELECT * FROM kb_documents WHERE doc_key = ?", (doc_key,)).fetchone()
+            return dict(row) if row else None
+
+    return await asyncio.to_thread(_run)
+
+
+async def disabled_doc_keys() -> set[str]:
+    """
+    被停用的 doc_key 集合。检索重建时用它把文件从语料里剔掉。
+
+    为什么不在扫描阶段就按数据库过滤（在 SQL 里 join 文件列表）：
+    文件系统是扫描的源头，数据库只是"备注"。先扫盘、后减掉停用项，
+    这样"库里有记录但文件已删"和"文件在但没登记"两种状态都不会漏。
+    """
+    def _run() -> set[str]:
+        with _connect() as conn:
+            rows = conn.execute("SELECT doc_key FROM kb_documents WHERE status = 'disabled'").fetchall()
+            return {str(r["doc_key"]) for r in rows}
+
+    return await asyncio.to_thread(_run)
+
+
+async def count_kb_documents(status: str | None = None) -> int:
+    def _run() -> int:
+        with _connect() as conn:
+            if status:
+                row = conn.execute(
+                    "SELECT COUNT(*) AS n FROM kb_documents WHERE status = ?", (status,)
+                ).fetchone()
+            else:
+                row = conn.execute("SELECT COUNT(*) AS n FROM kb_documents").fetchone()
+            return int(row["n"])
+
+    return await asyncio.to_thread(_run)
+
+
+async def sync_kb_documents(docs: list[dict[str, Any]]) -> None:
+    """
+    重建后把磁盘现状同步进登记表。
+
+    两条规则，缺一不可：
+      1) 本次扫到的文档 → 插入或更新元数据，并把 on_disk 拉回 1；
+      2) 本次没扫到的 → on_disk 置 0，但**保留 status**，
+         因为"管理员停用了"和"文件被删了"是两件事，不能互相覆盖。
+    更新时**不动 status**：一次重建不该悄悄把停用的文档重新启用。
+    """
+    now = _now()
+
+    def _run() -> None:
+        with _connect() as conn:
+            for d in docs:
+                conn.execute(
+                    "INSERT INTO kb_documents (doc_key, display_name, origin, status, sha256, "
+                    "size_bytes, chunks, file_mtime, on_disk, synced_at) "
+                    "VALUES (?, ?, ?, 'active', ?, ?, ?, ?, 1, ?) "
+                    "ON CONFLICT(doc_key) DO UPDATE SET "
+                    "display_name = excluded.display_name, origin = excluded.origin, "
+                    "sha256 = excluded.sha256, size_bytes = excluded.size_bytes, "
+                    "chunks = excluded.chunks, file_mtime = excluded.file_mtime, "
+                    "on_disk = 1, synced_at = excluded.synced_at",
+                    (
+                        d["doc_key"],
+                        d["display_name"],
+                        d["origin"],
+                        d.get("sha256"),
+                        int(d.get("size_bytes") or 0),
+                        int(d.get("chunks") or 0),
+                        d.get("file_mtime"),
+                        now,
+                    ),
+                )
+            if docs:
+                marks = ",".join("?" * len(docs))
+                conn.execute(
+                    f"UPDATE kb_documents SET on_disk = 0 WHERE doc_key NOT IN ({marks})",
+                    [d["doc_key"] for d in docs],
+                )
+            else:
+                conn.execute("UPDATE kb_documents SET on_disk = 0")
+
+    await asyncio.to_thread(_run)
+
+
+async def set_kb_document_status(
+    doc_key: str,
+    status: str,
+    actor: dict[str, Any] | None,
+    ip: str | None = None,
+) -> dict[str, Any]:
+    """启用 / 停用一份制度文档。状态没变时如实返回 changed=False。"""
+    if status not in ("active", "disabled"):
+        raise ApiError("INVALID_REQUEST", f"状态只能是 active / disabled，收到 {status}")
+
+    def _run() -> dict[str, Any]:
+        with _connect() as conn:
+            row = conn.execute("SELECT * FROM kb_documents WHERE doc_key = ?", (doc_key,)).fetchone()
+            if row is None:
+                raise ApiError("KB_DOC_NOT_FOUND")
+            before = dict(row)
+            if before["status"] == status:
+                return {"doc_key": doc_key, "status": status, "changed": False}
+            conn.execute(
+                "UPDATE kb_documents SET status = ?, synced_at = ? WHERE doc_key = ?",
+                (status, _now(), doc_key),
+            )
+            _log(
+                conn,
+                actor=actor,
+                action="kb.disable" if status == "disabled" else "kb.enable",
+                target_type="kb",
+                target_id=doc_key,
+                before={"status": before["status"], "chunks": before["chunks"]},
+                after={"status": status},
+                ip=ip,
+            )
+            return {"doc_key": doc_key, "status": status, "changed": True, "chunks": int(before["chunks"] or 0)}
+
+    return await asyncio.to_thread(_run)
+
+
+async def delete_kb_document(
+    doc_key: str,
+    actor: dict[str, Any] | None,
+    ip: str | None = None,
+) -> dict[str, Any]:
+    """
+    删除登记（仅限上传文档；内置文档只能停用，见 web 层）。物理文件由 rag 层先移走。
+    """
+    def _run() -> dict[str, Any]:
+        with _connect() as conn:
+            row = conn.execute("SELECT * FROM kb_documents WHERE doc_key = ?", (doc_key,)).fetchone()
+            if row is None:
+                raise ApiError("KB_DOC_NOT_FOUND")
+            before = dict(row)
+            if before["origin"] != "uploaded":
+                raise ApiError("KB_DOC_BUILTIN", "内置文档只能停用，不能删除")
+            conn.execute("DELETE FROM kb_documents WHERE doc_key = ?", (doc_key,))
+            _log(
+                conn,
+                actor=actor,
+                action="kb.delete",
+                target_type="kb",
+                target_id=doc_key,
+                before={"display_name": before["display_name"], "chunks": before["chunks"]},
+                ip=ip,
+            )
+            return {"doc_key": doc_key, "display_name": before["display_name"]}
 
     return await asyncio.to_thread(_run)

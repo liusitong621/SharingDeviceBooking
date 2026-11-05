@@ -1,0 +1,41 @@
+# 共享设备借用系统 · 运行依赖
+#
+# 安装：
+#   python -m venv .venv
+#   .venv/bin/pip install -r requirements.txt
+#
+# 版本策略：**全部锁定精确版本**。
+#   本项目同时依赖 numpy（矩阵）、faiss-cpu（向量索引）、rank-bm25、jieba，
+#   其中 faiss-cpu 是对 numpy 的 C ABI 编译的。放开版本范围后，
+#   一次 `pip install -U numpy` 就会让 faiss 在 import 时报
+#   "undefined symbol"，而且报错点在 faiss 内部，很难定位到是版本漂移。
+#   升级时请整组一起升，并在升级后跑一遍 `.venv/bin/python -m unittest discover -s tests`。
+#
+# Python：3.11+（开发与验证环境为 3.13.12）。
+#   用到 `X | None` 语法与 `datetime.astimezone()` 的现代行为，3.10 以下不要用。
+
+# --- Web 框架 ---
+fastapi==0.162.0
+starlette==1.10.0
+uvicorn==0.54.0
+jinja2==3.1.6
+python-multipart==0.0.32      # 表单与文件上传（/admin/policies 依赖它，缺了会 500）
+pydantic==2.14.2
+
+# --- 认证 ---
+pyjwt==2.15.1                 # HS256 会话令牌；密码哈希用标准库 hashlib.scrypt，无需额外依赖
+
+# --- 检索（RAG）---
+numpy==2.5.4
+faiss-cpu==1.15.1             # 向量索引；与 numpy 版本强绑定，升级需成对验证
+rank-bm25==0.2.2              # 关键词通道
+jieba==0.42.1                 # 中文分词；缺失时脚本会自动退回「单字 + 二元组」，召回会变差
+
+# --- 大模型调用 ---
+httpx==0.28.1                 # 同时用于流式对话与 embedding 接口
+
+# 说明：
+# - 未配置 LLM_API_KEY 时服务自动进入降级模式（只返回制度原文），不影响启动与其余功能，
+#   所以这里没有把任何模型 SDK 列为硬依赖。
+# - 测试全部基于标准库 unittest，不需要 pytest：
+#     .venv/bin/python -m unittest discover -s tests -q

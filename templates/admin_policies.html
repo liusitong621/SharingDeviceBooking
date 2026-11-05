@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}制度知识库{% endblock %}
+{% block heading %}制度知识库{% endblock %}
+{% block subheading %}上传即重建 · 改完不用重启进程{% endblock %}
+
+{% block body %}
+{% if error %}
+<div class="card" style="border-color:var(--danger);margin-bottom:16px">
+  <div class="card-bd" style="color:var(--danger);white-space:pre-wrap">{{ error }}</div>
+</div>
+{% endif %}
+{% if notice %}
+<div class="card" style="border-color:var(--ok);margin-bottom:16px">
+  <div class="card-bd" style="color:var(--ink-2)">{{ notice }}</div>
+</div>
+{% endif %}
+
+{# 索引状态放在最上面：管理员改完制度，第一个问题永远是"生效了吗"，
+   这个问题的答案就是"当前有多少片、什么时候建的"。 #}
+<div class="grid-4">
+  <div class="stat">
+    <div class="k">参与检索的文档</div>
+    <div class="v">{{ stats.active_docs }}<small>份</small></div>
+    {% if stats.disabled_docs %}<div class="hint" style="color:var(--muted)">另有 {{ stats.disabled_docs }} 份已停用</div>{% endif %}
+  </div>
+  <div class="stat">
+    <div class="k">索引切片</div>
+    <div class="v">{{ stats.chunks }}<small>片</small></div>
+    <div class="hint" style="color:var(--muted)">向量后端 {{ stats.embed_backend or '—' }}</div>
+  </div>
+  <div class="stat">
+    <div class="k">上次重建</div>
+    <div class="v" style="font-size:17px">{{ stats.last.at[11:19] if stats.last.at else '尚未重建' }}</div>
+    <div class="hint" style="color:var(--muted)">
+      {% if stats.last.at %}{{ stats.last.at[:10] }} · {{ stats.last.label }}{% endif %}
+    </div>
+  </div>
+  <div class="stat {% if not stats.ready %}attention{% endif %}">
+    <div class="k">检索状态</div>
+    <div class="v" style="font-size:17px">
+      {% if stats.ready %}<span style="color:var(--ok)">正常</span>{% else %}<span style="color:var(--danger)">不可用</span>{% endif %}
+    </div>
+    {% if stats.error %}<div class="hint" style="color:var(--danger)">{{ stats.error }}</div>{% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-hd">
+    <h2>上传制度文档</h2>
+    <span class="badge mute">.md / .txt · 上限 {{ max_kb }}KB</span>
+  </div>
+  <div class="card-bd">
+    <form method="post" action="/admin/policies/upload" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <input type="file" name="file" accept=".md,.markdown,.txt" required
+               style="font-size:13px;color:var(--ink-2)">
+        <button type="submit" class="btn primary">上传并重建索引</button>
+      </div>
+      <div style="color:var(--muted);font-size:12.5px;line-height:1.8;margin-top:10px">
+        文件名保留中文，会直接作为回答里的「出处」显示，请让文件名本身说明是哪份制度。<br>
+        GBK / UTF-8 都能识别，入库统一转 UTF-8；<strong style="color:var(--ink-2)">PDF 不支持</strong>——
+        PDF 解析常把表格拆散，制度里的关键数字最容易在拆表时丢，请先转成 markdown。<br>
+        同名文件不会被覆盖：先删除或改名，确认自己替换的是哪一版。
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <div class="card-hd">
+    <h2>文档清单</h2>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="badge mute">{{ docs|length }} 份</span>
+      {# 直接改磁盘文件（比如用编辑器修正错别字）后，靠这个按钮让索引重新读一遍。
+         有它才敢说"不用重启"——否则那种改法只能重启。 #}
+      <form method="post" action="/admin/policies/rebuild" style="display:inline"
+            onsubmit="return confirm('按磁盘现状重建索引？当前 {{ stats.chunks }} 片，期间检索不受影响。')">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button type="submit" class="btn sm">重建索引</button>
+      </form>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>文档</th>
+        <th style="width:80px">来源</th>
+        <th style="width:90px">状态</th>
+        <th style="width:70px" class="num">切片</th>
+        <th style="width:80px" class="num">大小</th>
+        <th style="width:150px">文件更新</th>
+        <th style="width:220px" class="num">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in docs %}
+      <tr>
+        <td>
+          <strong>{{ d.display_name }}</strong>
+          <div class="mono" style="color:var(--muted);font-size:11.5px;margin-top:2px">{{ d.doc_key }}</div>
+        </td>
+        <td>
+          {% if d.origin == 'builtin' %}
+          <span class="badge mute">内置</span>
+          {% else %}
+          <span class="badge brand">上传</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if not d.on_disk %}
+          <span class="badge danger">文件已丢失</span>
+          {% elif d.status == 'active' %}
+          <span class="badge ok">启用</span>
+          {% else %}
+          <span class="badge warn">已停用</span>
+          {% endif %}
+        </td>
+        <td class="num mono">{{ d.chunks }}</td>
+        <td class="num mono" style="color:var(--muted)">{{ (d.size_bytes / 1024) | round(1) }} KB</td>
+        <td class="mono" style="color:var(--muted);font-size:12px">{{ d.file_mtime or '—' }}</td>
+        <td class="num">
+          {% if d.on_disk %}
+          <a class="btn sm" href="/admin/policies?preview={{ d.doc_key | urlencode }}">切片</a>
+          <form method="post" action="/admin/policies/status" style="display:inline">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <input type="hidden" name="doc_key" value="{{ d.doc_key }}">
+            {% if d.status == 'active' %}
+            <input type="hidden" name="action" value="disable">
+            <button type="submit" class="btn sm"
+                    onclick="return confirm('停用《{{ d.display_name }}》？它的 {{ d.chunks }} 个切片将不再被检索，文件仍保留在磁盘上，随时可以重新启用。')">停用</button>
+            {% else %}
+            <input type="hidden" name="action" value="enable">
+            <button type="submit" class="btn sm">启用</button>
+            {% endif %}
+          </form>
+          {% endif %}
+          {% if d.origin == 'uploaded' %}
+          <form method="post" action="/admin/policies/delete" style="display:inline"
+                onsubmit="return confirm('删除《{{ d.display_name }}》？文件会被移到 data/kb/.trash，不从磁盘销毁，但页面上再也看不到它。')">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <input type="hidden" name="doc_key" value="{{ d.doc_key }}">
+            <button type="submit" class="btn sm danger">删除</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if preview_key %}
+<div class="card" style="margin-top:16px">
+  <div class="card-hd">
+    <h2>切片预览 · {{ preview_doc.display_name if preview_doc else preview_key }}</h2>
+    <a class="btn sm" href="/admin/policies">收起</a>
+  </div>
+  <div class="card-bd">
+    {% if not preview_chunks %}
+    <div class="empty">这份文档没有可预览的切片（文件已不在磁盘上，或只有标题没有正文）。</div>
+    {% else %}
+    <div style="color:var(--muted);font-size:12.5px;line-height:1.8;margin-bottom:12px">
+      下面就是检索真正看到的样子：一个切片是一条独立的检索结果。
+      如果某一段横跨了好几个主题、或者一句话被切成两半，命中率就会掉——
+      这种情况应该调整文档的标题层级，而不是指望模型去猜。
+    </div>
+    <ul class="chunk-list">
+      {% for c in preview_chunks %}
+      <li>
+        <div class="chunk-hd">
+          <span class="mono">{{ c.chunk_id }}</span>
+          <strong>{{ c.heading }}</strong>
+          <span class="chunk-chars">{{ c.chars }} 字</span>
+        </div>
+        <p>{{ c.text }}</p>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-top:16px">
+  <div class="card-bd" style="color:var(--muted);font-size:13px;line-height:1.9">
+    <strong style="color:var(--ink-2)">这一页为什么这样设计</strong><br>
+    · <strong style="color:var(--ink-2)">停用，而不是删除。</strong>
+    制度作废时正确的动作是"不再被检索到"，不是销毁原件。停用只改一行状态，
+    原件与切片规则都还在，一年后要追溯"当时为什么这么答"还能复现。<br>
+    · <strong style="color:var(--ink-2)">内置文档只能停用。</strong>
+    它们随代码走 git，网页上删掉会和仓库产生静默分歧——下一次部署它们又回来了。<br>
+    · <strong style="color:var(--ink-2)">重建期间检索不受影响。</strong>
+    新索引建完才整体替换；重建失败则继续用旧索引，只是新内容检索不到，
+    不会让问答整个挂掉。<br>
+    · 语料目录：<span class="mono">{{ builtin_dir }}</span>、
+    <span class="mono">{{ upload_dir }}</span>
+  </div>
+</div>
+{% endblock %}

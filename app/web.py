@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from app import auth, booking_service, db
+from app import auth, booking_service, db, rag
 from app.agent import prompts
 from app.agent.tools import build_today_hint
 from app.auth import current_user
@@ -922,6 +922,11 @@ _ACTION_LABELS = {
     "user.enable": "启用账号",
     "user.reset_password": "重置密码",
     "prompt.publish": "发布提示词",
+    "kb.upload": "上传制度",
+    "kb.disable": "停用制度文档",
+    "kb.enable": "启用制度文档",
+    "kb.delete": "删除制度文档",
+    "kb.rebuild": "重建检索索引",
     "audit.flag": "标记对话",
     "audit.reflag": "修改标记",
     "audit.unflag": "撤销标记",
@@ -991,7 +996,7 @@ async def admin_logs(request: Request) -> HTMLResponse:
     action = qp.get("action") or None
 
     rows = await db.list_op_logs(
-        target_type=target_type if target_type in ("booking", "device", "user", "prompt", "run") else None,
+        target_type=target_type if target_type in ("booking", "device", "user", "prompt", "run", "kb") else None,
         target_id=target_id.strip() if target_id and target_id.strip() else None,
         action=action.strip() if action and action.strip() else None,
         limit=300,
@@ -1455,3 +1460,338 @@ async def admin_audit_flag(request: Request, run_id: str):
         return render(request, "error.html", {"user": user, "code": exc.status, "message": exc.message}, exc.status)
 
     return RedirectResponse(f"/admin/audit/{run_id}", status_code=302)
+
+
+# =============================================================================
+# 制度知识库（批次 5）
+# -----------------------------------------------------------------------------
+# 这一页解决的是 P0：此前 warmup() 只在进程启动时跑一次，管理员改了制度文件，
+# 用户问到的还是旧条文，除非重启服务。制度每年都要改，这条路径必然会被走到。
+#
+# 页面上的三个动作，各自对应一个真实场景：
+#   上传   新制度发布，把文件交给系统；
+#   停用   旧制度作废，保留原件但不再被检索（不是删除）；
+#   重建   绕过网页直接改了磁盘文件后，让索引重新读一遍。
+#
+# 为什么"停用"是主操作、"删除"是次要操作：
+#   制度文档是有版本、有生效期的。作废时正确动作是"不再命中"，不是"销毁原件"。
+#   删除只对上传文件开放（内置文档随代码走 git，网页上删掉会和仓库产生静默分歧）。
+# =============================================================================
+
+_KB_OK_NOTICES = {
+    "upload": "上传成功，索引已重建，下一次提问就会用到新制度",
+    "enable": "已重新启用，索引已重建",
+    "disable": "已停用，索引已重建，这份文档不再参与检索",
+    "delete": "已删除（文件已移到 data/kb/.trash），索引已重建",
+    "rebuild": "索引已按磁盘现状重建",
+}
+
+
+async def _kb_rows() -> list[dict[str, Any]]:
+    """
+    页面用的文档清单 = **磁盘上的文件** + 登记表里的状态。
+
+    以磁盘为准，不以数据库为准：数据库只是备注，文件才是制度本体。
+    这样即使某次重建失败、元数据没同步上，页面也不会假装"文档不存在"。
+    """
+    rows = {r["doc_key"]: r for r in await db.list_kb_documents()}
+    disk = await rag.scan()
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for d in disk:
+        r = rows.get(d["doc_key"]) or {}
+        out.append(
+            {
+                "doc_key": d["doc_key"],
+                "display_name": d["display_name"],
+                "origin": d["origin"],
+                "status": r.get("status") or "active",
+                "chunks": int(r.get("chunks") or 0),
+                "size_bytes": d["size_bytes"],
+                "file_mtime": d["file_mtime"],
+                "on_disk": True,
+            }
+        )
+        seen.add(d["doc_key"])
+
+    # 登记过但磁盘上已经没有的：不隐藏。管理员需要知道"这份文档没了"，
+    # 而不是发现检索结果少了一段却找不到原因。
+    for key, r in rows.items():
+        if key not in seen:
+            out.append(
+                {
+                    "doc_key": key,
+                    "display_name": r["display_name"],
+                    "origin": r["origin"],
+                    "status": r["status"],
+                    "chunks": int(r["chunks"] or 0),
+                    "size_bytes": int(r["size_bytes"] or 0),
+                    "file_mtime": r["file_mtime"],
+                    "on_disk": False,
+                }
+            )
+
+    out.sort(key=lambda x: (x["status"] != "active", x["origin"] != "builtin", x["display_name"]))
+    return out
+
+
+def _kb_size(n: int) -> str:
+    if n >= 1024 * 1024:
+        return f"{n / 1024 / 1024:.1f} MB"
+    if n >= 1024:
+        return f"{n / 1024:.1f} KB"
+    return f"{n} B"
+
+
+_KB_REASON_LABELS = {
+    "startup": "服务启动",
+    "manual": "手动重建",
+    "upload": "上传后重建",
+    "delete": "删除后重建",
+    "enable": "启用后重建",
+    "disable": "停用后重建",
+}
+
+
+def _kb_reason_label(reason: str | None) -> str:
+    """
+    重建原因转人话。
+
+    原始 reason 是 `delete:uploads/xxx.md` 这种给日志用的串，
+    直接铺在页面上有两个问题：英文动作码看不懂，而且**会把刚删掉的文档名再显示一遍**，
+    看起来像没删成功。日志里保留原串用于追溯，页面上只给人看的部分翻译过来。
+    """
+    if not reason:
+        return "—"
+    head = reason.split(":", 1)[0]
+    return _KB_REASON_LABELS.get(head, reason)
+
+
+async def _kb_page(
+    request: Request,
+    user: dict[str, Any],
+    *,
+    error: str | None = None,
+    notice: str | None = None,
+    preview_key: str | None = None,
+) -> HTMLResponse:
+    rows = await _kb_rows()
+    st = rag.status()
+    last = dict(st.get("last_build") or {})
+    last["label"] = _kb_reason_label(last.get("reason"))
+    chunks = await rag.preview(preview_key) if preview_key else []
+    preview_doc = next((r for r in rows if r["doc_key"] == preview_key), None) if preview_key else None
+    return render(
+        request,
+        "admin_policies.html",
+        {
+            "user": user,
+            "docs": rows,
+            "stats": {
+                "ready": st["ready"],
+                "chunks": st["chunks"],
+                "embed_backend": st["embed_backend"],
+                "error": st["error"],
+                "last": last,
+                "active_docs": sum(1 for r in rows if r["status"] == "active" and r["on_disk"]),
+                "disabled_docs": sum(1 for r in rows if r["status"] == "disabled"),
+                "missing_docs": sum(1 for r in rows if not r["on_disk"]),
+            },
+            "error": error,
+            "notice": notice,
+            "preview_key": preview_key,
+            "preview_doc": preview_doc,
+            "preview_chunks": chunks,
+            "max_kb": rag.MAX_UPLOAD_BYTES // 1024,
+            "builtin_dir": st["builtin_dir"],
+            "upload_dir": st["upload_dir"],
+        },
+    )
+
+
+def _kb_rebuild_msg(res: dict[str, Any]) -> str | None:
+    """重建结果转一句话。成功返回 None，失败返回给人看的原因。"""
+    if res.get("ok"):
+        return None
+    kept = "检索仍在用上一次的索引" if res.get("kept_previous") else "当前没有可用索引，问答会返回 503"
+    return f"索引重建失败：{res.get('error')}（{kept}）"
+
+
+async def _rebuild_after_change(user: dict[str, Any], request: Request, reason: str) -> dict[str, Any]:
+    """
+    变更后立即重建，并留痕。
+
+    日志用 write_op_log（独立事务）而不是 db 层的 _log：
+    文件写入、删文件都不在数据库事务里，硬凑成"原子"只是假象。
+    这里如实记"重建发生在什么原因之后"，才是有用的信息。
+    """
+    res = await rag.rebuild(reason)
+    await db.write_op_log(
+        actor=user,
+        action="kb.rebuild",
+        target_type="kb",
+        target_id=reason,
+        after={
+            "ok": bool(res.get("ok")),
+            "chunks": res.get("chunks"),
+            "docs": res.get("docs"),
+            "cache_hit": res.get("cache_hit"),
+            "error": res.get("error"),
+        },
+        ip=_ip(request),
+    )
+    return res
+
+
+@router.get("/admin/policies", response_class=HTMLResponse)
+async def admin_policies(request: Request) -> HTMLResponse:
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    qp = request.query_params
+    ok = qp.get("ok")
+    return await _kb_page(
+        request,
+        user,
+        notice=_KB_OK_NOTICES.get(ok or ""),
+        preview_key=(qp.get("preview") or "").strip() or None,
+    )
+
+
+@router.post("/admin/policies/upload")
+async def admin_kb_upload(request: Request):
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    upload = form.get("file")
+    if upload is None or isinstance(upload, str):
+        return await _kb_page(request, user, error="请选择要上传的文件")
+
+    # starlette 的 UploadFile 会先把大文件落到临时目录，所以先看 size 再读内容，
+    # 别等把 200MB 读进内存才告诉用户"太大了"。
+    if getattr(upload, "size", None) and upload.size > rag.MAX_UPLOAD_BYTES:
+        return await _kb_page(
+            request, user,
+            error=f"文件 {upload.size // 1024}KB，超过上限 {rag.MAX_UPLOAD_BYTES // 1024}KB",
+        )
+
+    try:
+        saved = await rag.save_upload(upload.filename or "", await upload.read())
+    except ApiError as exc:
+        return await _kb_page(request, user, error=exc.message)
+    except OSError as exc:
+        return await _kb_page(request, user, error=f"文件保存失败：{exc}")
+
+    # 先记"谁传了什么"，再重建。顺序很重要：万一重建失败，这份文件也已经
+    # 落到磁盘上了，日志里必须有它，否则会出现一个"查不到来源"的制度文件。
+    await db.write_op_log(
+        actor=user,
+        action="kb.upload",
+        target_type="kb",
+        target_id=saved["doc_key"],
+        after={"display_name": saved["display_name"], "size_bytes": saved["size_bytes"], "chars": saved["chars"]},
+        ip=_ip(request),
+    )
+
+    res = await _rebuild_after_change(user, request, f"upload:{saved['doc_key']}")
+    logger.info("管理员 %s 上传制度文档 %s", user.get("emp_no"), saved["doc_key"])
+
+    if not res.get("ok"):
+        # 文件已经落盘、也登记了，只是没进索引。如实说明，别让人以为上传失败又传一遍。
+        return await _kb_page(
+            request, user,
+            error=f"《{saved['display_name']}》已保存，但{_kb_rebuild_msg(res)}",
+        )
+    return RedirectResponse("/admin/policies?ok=upload", status_code=302)
+
+
+@router.post("/admin/policies/status")
+async def admin_kb_status(request: Request):
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    doc_key = _clean(form.get("doc_key"), 160)
+    action = _clean(form.get("action"), 20)
+    if not doc_key or action not in ("enable", "disable"):
+        return await _kb_page(request, user, error="参数不完整，请刷新页面后重试")
+
+    if action == "disable":
+        # 停用最后一份文档会让检索彻底空转（问答全 503），所以先拦。
+        # 放在这里而不是 rebuild 里，是因为状态一旦改了、重建却失败，库和索引会打架。
+        active = [r for r in await _kb_rows() if r["status"] == "active" and r["on_disk"]]
+        if len(active) <= 1 and any(r["doc_key"] == doc_key for r in active):
+            return await _kb_page(request, user, error="至少要保留一份启用的制度文档；要换文档请先上传新的再停用旧的")
+
+    try:
+        changed = await db.set_kb_document_status(doc_key, "active" if action == "enable" else "disabled", actor=user, ip=_ip(request))
+    except ApiError as exc:
+        return await _kb_page(request, user, error=exc.message)
+
+    if not changed.get("changed"):
+        return await _kb_page(request, user, notice="状态没有变化，无需重建")
+
+    res = await _rebuild_after_change(user, request, f"{action}:{doc_key}")
+    logger.info("管理员 %s %s 制度文档 %s", user.get("emp_no"), "启用" if action == "enable" else "停用", doc_key)
+    if not res.get("ok"):
+        return await _kb_page(request, user, error=f"状态已改，但{_kb_rebuild_msg(res)}")
+    return RedirectResponse(f"/admin/policies?ok={action}", status_code=302)
+
+
+@router.post("/admin/policies/delete")
+async def admin_kb_delete(request: Request):
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    doc_key = _clean(form.get("doc_key"), 160)
+    if not doc_key:
+        return await _kb_page(request, user, error="参数不完整，请刷新页面后重试")
+
+    # 先移文件再删登记：文件移不走就什么都别动（最坏情况是"记录还在"，可重来）；
+    # 反过来先删登记，万一移文件失败，就成了一份谁也看不见的孤儿文件。
+    try:
+        moved = await rag.trash_upload(doc_key)
+        deleted = await db.delete_kb_document(doc_key, actor=user, ip=_ip(request))
+    except ApiError as exc:
+        return await _kb_page(request, user, error=exc.message)
+    except OSError as exc:
+        return await _kb_page(request, user, error=f"文件移动失败：{exc}")
+
+    res = await _rebuild_after_change(user, request, f"delete:{doc_key}")
+    logger.info("管理员 %s 删除制度文档 %s（移到 %s）", user.get("emp_no"), doc_key, moved)
+    if not res.get("ok"):
+        return await _kb_page(request, user, error=f"已删除《{deleted['display_name']}》，但{_kb_rebuild_msg(res)}")
+    return RedirectResponse("/admin/policies?ok=delete", status_code=302)
+
+
+@router.post("/admin/policies/rebuild")
+async def admin_kb_rebuild(request: Request):
+    user, deny = await require_admin(request)
+    if deny:
+        return deny
+
+    form = await request.form()
+    if not auth.csrf_ok(request, form.get(auth.CSRF_FIELD)):
+        return render(request, "error.html", {"user": user, "code": 403, "message": "页面已过期，请刷新后重试"}, 403)
+
+    res = await _rebuild_after_change(user, request, "manual")
+    logger.info("管理员 %s 手动重建索引：ok=%s", user.get("emp_no"), res.get("ok"))
+    if not res.get("ok"):
+        return await _kb_page(request, user, error=_kb_rebuild_msg(res))
+    return RedirectResponse("/admin/policies?ok=rebuild", status_code=302)
