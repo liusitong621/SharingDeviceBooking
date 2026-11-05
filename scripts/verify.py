@@ -97,47 +97,64 @@ def day(offset: int) -> str:
 # =============================================================================
 
 
-@check("R01", "时段与日配额")
+@check("R01", "设备台账与删除约束")
 async def r01() -> tuple[bool, str]:
     """
-    6 格 / 08:00–20:00 / 每天上限 2 格 / 今天已开始的格子不可约。
+    基线 R01 的验收口径有三句：资产编号唯一、只能软删除、**有未完成预约时不许删**。
 
-    "已开始"按起始时刻判定，所以这里用 now 反推期望值，
-    而不是写死"08:00 一定是 passed"——早上 7 点跑这条检查就不该失败。
+    第三句是本条的重点。它和 R03 的唯一索引是一对：索引保证同一格不出两单，
+    这条保证被占用的设备不会从台账里消失——否则预约还在、设备没了，
+    那张单就成了没人能处置的孤儿。
+    """
+    asset = f"EQ-VERIFY-{C.today.replace('-', '')}"
+    dev_id = await db.create_device(asset, "自检用设备", model="V1", actor=C.admin)
+
+    # 唯一性靠 UNIQUE，不靠"先查再插"——两次插入之间的窗口期拦不住并发
+    try:
+        await db.create_device(asset, "重复编号", actor=C.admin)
+    except ApiError as e:
+        if e.code != "DEVICE_EXISTS":
+            return False, f"重复资产编号应报 DEVICE_EXISTS，实际 {e.code}"
+    else:
+        return False, "同一个资产编号建出了两台设备"
+
+    made = await booking_service.place_booking(C.zhang["id"], dev_id, day(8), ["08:00"])
+    bid = made["bookings"][0]["id"]
+    try:
+        await db.delete_device(dev_id, actor=C.admin)
+    except ApiError as e:
+        if e.code != "DEVICE_HAS_ACTIVE_BOOKINGS":
+            return False, f"有未完成预约时删除应报 DEVICE_HAS_ACTIVE_BOOKINGS，实际 {e.code}"
+    else:
+        return False, "带着未完成预约的设备被删掉了"
+
+    await booking_service.cancel(C.zhang, bid)
+    await db.delete_device(dev_id, actor=C.admin)
+
+    if any(d["id"] == dev_id for d in await db.list_devices()):
+        return False, "软删除后台账里仍能查到这台设备"
+    return True, "编号唯一 · 有未完成预约拒删 · 删除后从台账消失"
+
+
+@check("R02", "占用视图四态一致")
+async def r02() -> tuple[bool, str]:
+    """
+    基线 R02 的一句话验收：**不允许出现"显示空闲但提交被拒"**。
+
+    所以这条不只验"格子画得对"，还验下架设备整列锁死、API 同样拒单——
+    视图与判定必须同源，否则界面就是在骗人。
     """
     states = slot_rules.slot_states(day(1), {}, "available", booking_service.now())
-    if len(states) != 6:
-        return False, f"时段数应为 6，实际 {len(states)}"
-    if [s["start"] for s in states][0] != "08:00" or states[-1]["end"] != "20:00":
-        return False, "时段边界不是 08:00–20:00"
-    if slot_rules.MAX_SLOTS_PER_DAY != 2:
-        return False, f"单日上限应为 2，实际 {slot_rules.MAX_SLOTS_PER_DAY}"
+    if len(states) != 6 or states[0]["start"] != "08:00" or states[-1]["end"] != "20:00":
+        return False, f"时段不是 6 格 08:00–20:00：{[s['start'] for s in states]}"
 
+    # 已开始的格子按起始时刻判定，不写死"08:00 一定已过"——早上 7 点跑这条不该失败
     now = booking_service.now()
-    today_states = slot_rules.slot_states(C.today, {}, "available", now)
-    expected_passed = [s["start"] for s in today_states if s["state"] == "passed"]
-    for s in today_states:
-        hh = int(s["start"].split(":")[0])
-        should = now.hour >= hh
-        if should and s["state"] != "passed":
+    for s in slot_rules.slot_states(C.today, {}, "available", now):
+        if now.hour >= int(s["start"].split(":")[0]) and s["state"] != "passed":
             return False, f"{s['start']} 应已过，实际 {s['state']}"
 
-    try:
-        await booking_service.place_booking(
-            C.zhang["id"], C.devices[0]["id"], day(1), ["08:00", "10:00", "12:00"]
-        )
-    except ApiError as e:
-        if e.code != "QUOTA_EXCEEDED":
-            return False, f"超上限应报 QUOTA_EXCEEDED，实际 {e.code}"
-    else:
-        return False, "约 3 格竟然成功了"
-
-    return True, f"6 格 08:00–20:00 · 上限 {slot_rules.MAX_SLOTS_PER_DAY} 格 · 今日已过 {len(expected_passed)} 格"
-
-
-@check("R02", "我的预约可见")
-async def r02() -> tuple[bool, str]:
-    """"mine" 这一态是 R02 的验收要求：不能只显示"被占"。"""
+    # mine 这一态是验收要求：不能只显示"被占"，本人得认得出自己的
     one = {"08:00": C.zhang["id"]}
     mine = slot_rules.slot_states(day(2), one, "available", booking_service.now(), C.zhang["id"])
     other = slot_rules.slot_states(day(2), one, "available", booking_service.now(), C.li["id"])
@@ -145,17 +162,49 @@ async def r02() -> tuple[bool, str]:
     s_other = next(s for s in other if s["start"] == "08:00")["state"]
     if s_mine != "mine" or s_other != "taken":
         return False, f"本人应见 mine、他人应见 taken，实际 {s_mine} / {s_other}"
-    return True, "本人的格子 mine，他人 taken"
+
+    dev = C.devices[2]
+    await db.set_device_status(dev["id"], "offline", actor=C.admin)
+    try:
+        try:
+            await booking_service.place_booking(C.zhang["id"], dev["id"], day(6), ["16:00"])
+        except ApiError as e:
+            if e.code != "DEVICE_OFFLINE":
+                return False, f"下架设备下单应报 DEVICE_OFFLINE，实际 {e.code}"
+        else:
+            return False, "下架设备竟然能约"
+
+        offline = slot_rules.slot_states(day(6), {}, "offline", booking_service.now())
+        if not all(s["state"] == "offline" for s in offline):
+            return False, "下架设备的格子没有全锁"
+    finally:
+        await db.set_device_status(dev["id"], "available", actor=C.admin)
+
+    return True, "6 格 · mine/taken 区分 · 下架整列锁死且 API 同拒"
 
 
-@check("R03", "并发抢同一格不超卖")
+@check("R03", "配额与并发不超卖")
 async def r03() -> tuple[bool, str]:
     """
-    8 个请求同时抢同一格，只能成 1 单。
+    基线 R03 的验收是"50 人并发抢同一格，成功 1 单"；配额上限是它的前置校验。
 
-    判据只看"成功数"，不看失败原因：并发下失败可能是 SLOT_TAKEN（唯一索引）
+    并发判据只看"成功数"，不看失败原因：并发下失败可能是 SLOT_TAKEN（唯一索引）
     也可能是 QUOTA_EXCEEDED（单日上限），两者都算"没多卖"。
+    这里用 8 并发而不是 50——本机跑 50 个协程只是把事件循环排得更长，
+    并没有真的制造多进程竞争，写进结论里反而会夸大。
     """
+    if slot_rules.MAX_SLOTS_PER_DAY != 2:
+        return False, f"单日上限应为 2，实际 {slot_rules.MAX_SLOTS_PER_DAY}"
+    try:
+        await booking_service.place_booking(
+            C.zhang["id"], C.devices[0]["id"], day(3), ["08:00", "10:00", "12:00"]
+        )
+    except ApiError as e:
+        if e.code != "QUOTA_EXCEEDED":
+            return False, f"超上限应报 QUOTA_EXCEEDED，实际 {e.code}"
+    else:
+        return False, "一次约 3 格竟然成功了"
+
     results = await asyncio.gather(
         *[
             booking_service.place_booking(C.zhang["id"], C.devices[1]["id"], day(3), ["08:00"])
@@ -198,27 +247,54 @@ async def r05() -> tuple[bool, str]:
             return False, f"重复归还应报 BOOKING_STATE_INVALID，实际 {e.code}"
     else:
         return False, "重复归还竟然成功"
-    return True, f"取用 → 归还（{res['returned_at'][11:16]}），重复归还被拒"
+    # 基线 R05 还有半句："未点取走的预约到时段结束自动置 expired，不占用后续格子"。
+    # 过期扫描接受 now 参数，所以这里直接给它一个"当晚 21 点"，不必等系统时钟。
+    made2 = await booking_service.place_booking(C.zhang["id"], C.devices[0]["id"], day(11), ["16:00"])
+    bid2 = made2["bookings"][0]["id"]
+    await db.expire_bookings(day(11) + "T21:00")
+    stale = await db.fetch_booking(bid2)
+    if not stale or stale["status"] != "expired" or stale["active_flag"] is not None:
+        got = f"{stale['status']} / 占用标记 {stale['active_flag']}" if stale else "查不到这张单"
+        return False, f"过时段未取应置 expired 并释放格子，实际 {got}"
+
+    return True, f"取用 → 归还（{res['returned_at'][11:16]}）· 重复归还被拒 · 未取走自动 expired"
 
 
-@check("R06", "下架设备不可约")
+@check("R06", "超期与未取清单")
 async def r06() -> tuple[bool, str]:
-    dev = C.devices[2]
-    await db.set_device_status(dev["id"], "offline", actor=C.admin)
-    try:
-        await booking_service.place_booking(C.zhang["id"], dev["id"], day(6), ["16:00"])
-    except ApiError as e:
-        if e.code != "DEVICE_OFFLINE":
-            return False, f"应报 DEVICE_OFFLINE，实际 {e.code}"
-    else:
-        return False, "下架设备竟然能约"
-    finally:
-        await db.set_device_status(dev["id"], "available", actor=C.admin)
+    """
+    基线 R06：管理员能看"过时未取"和"已取未还"两张清单，并能强制结束。
 
-    states = slot_rules.slot_states(day(6), {}, "offline", booking_service.now())
-    if all(s["state"] == "offline" for s in states):
-        return True, "下架后 6 格全锁，API 也拒绝下单"
-    return False, "下架状态的格子未全锁"
+    这里不改系统时钟，而是给清单传一个"未来的判断时刻"——等价于"到了那天 13 点
+    还没人动过"。构造出真实状态再查，比往表里插一行假数据可信。
+
+    强制结束不做"一律置 expired"：没取走的作废，已取走的记为归还。
+    理由很实际——设备已经不在柜里了，置 expired 会让"这台在哪"彻底失联。
+    """
+    a = await booking_service.place_booking(C.zhang["id"], C.devices[0]["id"], day(9), ["10:00"])
+    bid_a = a["bookings"][0]["id"]
+    b = await booking_service.place_booking(C.li["id"], C.devices[1]["id"], day(9), ["12:00"])
+    bid_b = b["bookings"][0]["id"]
+    await booking_service.pickup(C.li, bid_b)
+
+    # 判断时刻取 15:00：10:00 那格已经开场（应取未取），12:00–14:00 那格已经结束（已取未还）。
+    # 取 13:00 会让 14:00 结束的那单还没算超期——时间点选错，检查就会假失败。
+    lists = await db.list_overdue(day(9) + "T15:00")
+    if bid_a not in {r["id"] for r in lists["awaiting_pickup"]}:
+        return False, "过时未取的单没有出现在清单里"
+    if bid_b not in {r["id"] for r in lists["not_returned"]}:
+        return False, "已取未还的单没有出现在清单里"
+
+    gone = await booking_service.force_close(C.admin, bid_a, "超时未取")
+    back = await booking_service.force_close(C.admin, bid_b, "超时未还")
+    if gone["to"] != "expired" or back["to"] != "returned":
+        return False, f"booked→{gone['to']}、picked→{back['to']}，与预期不符"
+
+    actions = [r["action"] for r in await db.booking_timeline(bid_a)]
+    if "booking.force_close" not in actions:
+        return False, f"强制结束没有留痕：{actions}"
+
+    return True, "两张清单各命中 1 条 · booked→expired / picked→returned · 处置留痕"
 
 
 @check("R07", "任一预约可还原轨迹")

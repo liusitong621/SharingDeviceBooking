@@ -1,0 +1,40 @@
+name: CI
+
+# 只做一件事：证明 README 里"130 项单测 + R01–R08 逐条核对"不是写在文档里的形容词。
+#
+# 为什么不在这里跑 examples/demo.py 和 seed_demo.py：
+# 那两个脚本会写临时库、耗时几十秒，属于演示工具，不是回归门禁。
+# 门禁要快、要稳、要只因为代码坏了才红。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: 单测 + 需求自检
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # requirements.txt 声明 Python 3.11+；这里固定 3.11 而不是 3.13，
+          # 因为 faiss-cpu 的 manylinux wheel 对小版本的支持慢一档，
+          # 用最低支持版本能更早暴露"新语法没兼容"的问题。
+          python-version: "3.11"
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 单元测试（130 项）
+        run: python -m unittest discover -s tests -v
+
+      - name: 需求自检（R01–R08）
+        # 退出码非零即失败：verify.py 在任何一条断言不过时返回 1。
+        run: python scripts/verify.py
