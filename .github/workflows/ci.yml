@@ -13,22 +13,31 @@ on:
 
 jobs:
   verify:
-    name: 单测 + 需求自检
+    name: 单测 + 需求自检（py${{ matrix.python }}）
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      # 一个版本红了不要掐掉另一个：红的是哪一个版本本身就是信息
+      #（比如"只在 3.12 上炸"往往指向 C 扩展而不是业务代码）。
+      fail-fast: false
+      matrix:
+        # 两端的版本都要跑，理由不同：
+        #   3.12 —— requirements.txt 声明的最低支持版本（下限来自 numpy 2.5.x 的
+        #           Requires-Python >=3.12，不是本项目的语法）。
+        #   3.13 —— 本机开发与验证用的版本。
+        # 只跑 3.13 的话，"3.12+" 就只是 README 里的一句话；
+        # 只跑 3.12 的话，本地那套环境没被验证过。
+        #
+        # 曾经写的是单个 3.11，理由是「faiss wheel 对小版本支持慢一档，用最低版本
+        # 更早暴露兼容问题」。这个理由本身没错，但 3.11 已经低于依赖的下限了，
+        # 结果不是"暴露兼容问题"，而是 pip 直接装不上 numpy——红得没有信息量。
+        python: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          # 固定 3.12，是 requirements.txt 声明的最低支持版本（下限由 numpy 2.5.x 的
-          # Requires-Python >=3.12 决定，不是由本项目语法决定）。
-          #
-          # 曾经写的是 3.11，理由是「faiss wheel 对小版本支持慢一档，用最低版本更早
-          # 暴露兼容问题」。这个理由本身没错，但 3.11 已经低于依赖的下限了，
-          # 结果不是"暴露兼容问题"，而是 pip 直接装不上 numpy——红得没有信息量。
-          # 现在下限有据可查地是 3.12，CI 就钉在 3.12；本地开发用 3.13。
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
           cache: pip
 
       - name: 安装依赖

@@ -34,6 +34,20 @@ def at(y, m, d, hh, mm=0):
     return datetime(y, m, d, hh, mm, tzinfo=TZ)
 
 
+def local(y, m, d, hh, mm=0):
+    """
+    按**运行环境本地时区**构造时间。
+
+    为什么不能一律用上面的 at()：at() 写死 +08:00，而 `_normalize_returned_at`
+    把 naive 输入按服务器本地时区解释（内部是 `.astimezone()`）。
+    两边时区不一致时，断言就只在"机器在北京"时成立——
+    CI 跑在 UTC 上，"2026-11-05T15:40" 会被解释成 UTC 15:40，
+    比 now（+08:00 的 16:30）还晚，于是被判"未来归还"，4 项测试全红。
+    这不是代码坏了，是测试默认了运行机器在哪个时区。
+    """
+    return datetime(y, m, d, hh, mm).astimezone()
+
+
 # =============================================================================
 # R02：占用视图的四态
 # =============================================================================
@@ -79,24 +93,40 @@ class SlotStateTest(unittest.TestCase):
 
 
 class ReturnedAtTest(unittest.TestCase):
+    """
+    归还时间的规整与拒绝。
+
+    now 与期望值都用 local()：被测函数的口径是"按服务器本地时区解释用户填的时间"，
+    断言就得站在同一个时区上，否则测试结果会随运行机器的 TZ 变化。
+    """
+
     def setUp(self):
         from app.booking_service import _normalize_returned_at
         self.f = _normalize_returned_at
-        self.now = at(2026, 11, 5, 16, 30)
+        self.now = local(2026, 11, 5, 16, 30)
 
     def test_empty_means_use_server_time(self):
         self.assertIsNone(self.f("", self.now))
         self.assertIsNone(self.f(None, self.now))
 
     def test_full_datetime(self):
-        self.assertEqual(self.f("2026-11-05T15:40", self.now), "2026-11-05T15:40:00+08:00")
+        self.assertEqual(
+            self.f("2026-11-05T15:40", self.now),
+            local(2026, 11, 5, 15, 40).isoformat(timespec="seconds"),
+        )
 
     def test_space_separator_accepted(self):
         """从表格里复制来的时间常常是空格分隔，直接拒会让人以为功能坏了。"""
-        self.assertEqual(self.f("2026-11-05 15:40", self.now), "2026-11-05T15:40:00+08:00")
+        self.assertEqual(
+            self.f("2026-11-05 15:40", self.now),
+            local(2026, 11, 5, 15, 40).isoformat(timespec="seconds"),
+        )
 
     def test_time_only_uses_today(self):
-        self.assertEqual(self.f("15:40", self.now), "2026-11-05T15:40:00+08:00")
+        self.assertEqual(
+            self.f("15:40", self.now),
+            local(2026, 11, 5, 15, 40).isoformat(timespec="seconds"),
+        )
 
     def test_future_rejected(self):
         with self.assertRaises(ApiError) as ctx:
@@ -105,7 +135,10 @@ class ReturnedAtTest(unittest.TestCase):
 
     def test_small_clock_skew_allowed(self):
         """手机快 3 分钟是常态，不该因此拒绝归还。"""
-        self.assertEqual(self.f("2026-11-05T16:33", self.now), "2026-11-05T16:33:00+08:00")
+        self.assertEqual(
+            self.f("2026-11-05T16:33", self.now),
+            local(2026, 11, 5, 16, 33).isoformat(timespec="seconds"),
+        )
 
     def test_garbage_rejected(self):
         with self.assertRaises(ApiError):
