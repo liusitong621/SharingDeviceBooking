@@ -82,6 +82,33 @@ def create_app() -> FastAPI:
     # 静态资源与首页。单页应用，不做前端路由，所以 "/" 直接返回 index.html
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+    # 两条路径指向同一个处理函数：/api/healthz 是给托管平台用的——平台自己会占用
+    # 根路径下的 /healthz 返回 "Pod alive"，应用的路由在那里访问不到，看起来像
+    # "探针没生效"。/healthz 保留给自有服务器与本地脚本，避免已有巡检命令失效。
+    @app.get("/api/healthz", include_in_schema=False)
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz():
+        """
+        存活探针：不鉴权，供沙盒健康检查与运维巡检使用。
+
+        rag.status() 的文档字符串里早就写了「/health 与知识库页共用的状态快照」，
+        但那个端点一直没实现——巡检时只能靠 /login 是否 200 来判断服务活着，
+        而登录页是静态渲染的，数据库和检索都挂了它照样 200。这里补上真正的探针。
+
+        只回报「能不能干活」和「降级到哪一档」，不返回用户数、预约数等业务数据：
+        分享链接是公开的，多一个数字就多一条信息泄露路径。
+        """
+        st = rag.status()
+        db_ok = db.DB_PATH.exists()
+        return {
+            "status": "ok" if db_ok else "starting",
+            "version": app.version,
+            "db": "ok" if db_ok else "missing",
+            "rag": "ready" if st.get("ready") else "degraded",
+            "llm": "configured" if st.get("llm_ready") else "fallback",
+            "chunks": st.get("chunks", 0),
+        }
+
     @app.get("/", include_in_schema=False)
     async def index(request: Request):
         """

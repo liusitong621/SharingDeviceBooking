@@ -1,0 +1,159 @@
+:root {
+  --fs-h1: 19pt;
+  --fs-h2: 14pt;
+  --fs-h3: 11.5pt;
+  --fs-body: 10.5pt;
+  --fs-table: 9pt;
+  --fs-code: 9pt;
+  --fs-pre: 8.5pt;
+  --ff-body: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", sans-serif;
+  --ff-mono: "SF Mono", Menlo, Consolas, "Courier New", monospace;
+  --lh-body: 1.75;
+  --lh-tight: 1.55;
+  --lh-pre: 1.6;
+  --color-text: #1f2329;
+  --color-bg: #ffffff;
+  --color-heading: #16233d;
+  --color-h3: #26406e;
+  --color-accent: #2f5ad0;
+  --color-border: #ccd4e0;
+  --color-th: #eef3fb;
+  --color-code-bg: #f2f4f7;
+  --color-code-text: #b3305a;
+  --color-pre-bg: #f6f8fb;
+  --color-quote-bg: #fbfbf7;
+  --color-quote-border: #d9a441;
+  --color-quote-text: #4a4436;
+  --color-rule: #dfe4ec;
+  --spacing-page: 20mm 18mm;
+  --spacing-h1: 0 0 6pt;
+  --spacing-h1-pad: 10pt;
+  --spacing-h2: 20pt 0 8pt;
+  --spacing-h2-pad: 8pt;
+  --spacing-h3: 14pt 0 6pt;
+  --spacing-para: 0 0 7pt;
+  --spacing-list: 0 0 8pt;
+  --spacing-list-item: 0 0 3pt;
+  --spacing-list-indent: 20pt;
+  --spacing-code: 7pt 9pt;
+  --spacing-code-margin: 0 0 9pt;
+  --spacing-code-inline: 1pt 3pt;
+  --spacing-table: 0 0 10pt;
+  --spacing-cell: 4pt 5pt;
+  --spacing-quote: 7pt 10pt;
+  --spacing-quote-margin: 0 0 9pt;
+  --spacing-rule: 12pt 0;
+  --page-content-width: 17.4cm;
+}
+
+@page {
+  size: A4;
+  margin: var(--spacing-page);
+  @bottom-center { content: counter(page); }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: var(--ff-body);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  max-width: var(--page-content-width);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+h1 {
+  font-size: var(--fs-h1);
+  text-align: center;
+  margin: var(--spacing-h1);
+  padding-bottom: var(--spacing-h1-pad);
+  border-bottom: 1.2pt solid var(--color-accent);
+  color: var(--color-heading);
+  letter-spacing: 0.5pt;
+}
+
+h2 {
+  font-size: var(--fs-h2);
+  margin: var(--spacing-h2);
+  padding-left: var(--spacing-h2-pad);
+  border-left: 4pt solid var(--color-accent);
+  color: var(--color-heading);
+}
+
+h3 {
+  font-size: var(--fs-h3);
+  margin: var(--spacing-h3);
+  color: var(--color-h3);
+}
+
+p { margin: var(--spacing-para); text-align: justify; }
+
+ul, ol {
+  margin: var(--spacing-list);
+  padding-left: var(--spacing-list-indent);
+}
+
+li { margin: var(--spacing-list-item); }
+
+code {
+  font-family: var(--ff-mono);
+  font-size: var(--fs-code);
+  background: var(--color-code-bg);
+  padding: var(--spacing-code-inline);
+  border-radius: 2pt;
+  color: var(--color-code-text);
+}
+
+/* 不给底色：转换器遇到 background 会把段落包成 1×1 表格（实测），
+   代码块会变成带边框的格子。用左边框 + 等宽字体同样能区分。 */
+.code-block {
+  font-family: var(--ff-mono);
+  font-size: var(--fs-pre);
+  line-height: var(--lh-pre);
+  border-left: 3pt solid var(--color-accent);
+  padding: var(--spacing-code);
+  margin: var(--spacing-code-margin);
+  text-align: left;
+  word-break: break-all;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--spacing-table);
+  font-size: var(--fs-table);
+  table-layout: fixed;
+}
+
+th, td {
+  border: 0.75pt solid var(--color-border);
+  padding: var(--spacing-cell);
+  vertical-align: top;
+  word-break: break-word;
+  line-height: var(--lh-tight);
+}
+
+th {
+  background: var(--color-th);
+  color: var(--color-heading);
+  font-weight: 600;
+  text-align: left;
+}
+
+.quote {
+  margin: var(--spacing-quote-margin);
+  padding: var(--spacing-quote);
+  border-left: 3pt solid var(--color-quote-border);
+  color: var(--color-quote-text);
+}
+
+hr {
+  border: none;
+  border-top: 0.75pt solid var(--color-rule);
+  margin: var(--spacing-rule);
+}
+
+strong { color: var(--color-heading); }

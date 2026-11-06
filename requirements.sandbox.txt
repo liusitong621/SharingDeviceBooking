@@ -1,0 +1,29 @@
+# 沙盒部署专用依赖清单（本地开发与 CI 仍用 requirements.txt）
+#
+# 为什么另有一份：发布沙盒的解释器是 Python 3.11 档，而主清单锁的
+# numpy==2.5.4 的 Requires-Python 是 >=3.12。pip 在这种情况下报的是
+# 「Could not find a version that satisfies numpy==2.5.4」，看着像包不存在，
+# 实际是解释器版本不够。CI 那次靠把 runner 升到 3.12/3.13 解决；沙盒的解释器
+# 版本不在我们手里，所以只能让这份清单落在 3.11 能装的版本上。
+#
+# 与主清单只有两处差异，都是刻意的：
+#   1. numpy 2.5.4 → 2.4.6：Requires-Python >=3.11，且有 cp311 的 manylinux wheel。
+#   2. 去掉 faiss-cpu：scripts/stage1_rag_prototype.py 里 faiss 是 try/except 可选导入，
+#      缺失时 VectorIndex 退化为 numpy 暴力内积。沙盒内置语料只有 9 个切片，
+#      IndexFlatIP 与暴力内积同为「精确内积」，结果一致，性能差异可忽略。
+#      去掉它也就顺带绕开了 faiss 与 numpy 的 C ABI 绑定——那类故障只在 import
+#      时抛 undefined symbol，安装阶段完全看不出来。
+#
+# 其余版本与 requirements.txt 逐行一致，便于日后对照，不让两套依赖悄悄漂移。
+
+fastapi==0.162.0
+starlette==1.10.0
+uvicorn==0.54.0
+jinja2==3.1.6
+python-multipart==0.0.32
+pydantic==2.14.2
+pyjwt==2.15.1
+numpy==2.4.6
+rank-bm25==0.2.2
+jieba==0.42.1
+httpx==0.28.1
