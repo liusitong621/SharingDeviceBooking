@@ -43,15 +43,20 @@ class HealthzTest(unittest.TestCase):
             with self.subTest(path=path):
                 resp = self._get(path)
                 self.assertEqual(resp.status_code, 200)
-                self.assertEqual(resp.json()["status"], "ok")
+                # CI 是全新 checkout，data/ 被 gitignore，库不存在时探针必须
+                # 仍是 200 且报 "starting"——冷启动不等于服务挂了。
+                self.assertIn(resp.json()["status"], ("ok", "starting"))
 
     def test_shape_and_no_business_data(self):
         body = self._get().json()
-        self.assertEqual(body["status"], "ok")
+        self.assertIn(body["status"], ("ok", "starting"))
         self.assertIn("version", body)
         self.assertIn(body["db"], ("ok", "missing"))
         self.assertIn(body["rag"], ("ready", "degraded"))
         self.assertIn(body["llm"], ("configured", "fallback"))
+        # status 与 db 必须自洽：库在就是 ok，库不在就是 starting，不能各说各话
+        expect = "ok" if body["db"] == "ok" else "starting"
+        self.assertEqual(body["status"], expect)
         # 公开链接下，探针只准回报可用性与降级档位
         for leaked in ("users", "bookings", "messages", "emp_no", "token", "secret"):
             self.assertNotIn(leaked, body)
