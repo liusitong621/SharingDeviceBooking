@@ -236,10 +236,34 @@ async def r04() -> tuple[bool, str]:
 async def r05() -> tuple[bool, str]:
     made = await booking_service.place_booking(C.zhang["id"], C.devices[2]["id"], day(5), ["14:00"])
     bid = made["bookings"][0]["id"]
+    # pickup 不校验"现在是否落在时段内"（现场登记本来就是事后补录），
+    # 所以这里可以在未来日期的单子上演练取还，不必等真实时段到来。
     await booking_service.pickup(C.zhang, bid)
-    res = await booking_service.give_back(C.zhang, bid, remark="外壳有划痕", returned_at="15:40")
+
+    # 归还时间不能用写死的 "15:40"。时分形态会被补成**今天**的 15:40，
+    # 而服务端拒绝"未来归还"，于是这条断言上午跑必红、下午 15:40 后才绿——
+    # 一条只在下午通过的检查，等于没有检查（第一版就是在这里翻车的）。
+    # 改成"此刻往前 2 分钟"，与跑的时间点无关。
+    # 秒也抹掉：页面传的是 datetime-local（精度到分），服务端按分钟写库，
+    # 断言就不能拿带秒的时刻去比，否则差异是 21 秒 vs 00 秒这种无关噪声。
+    elapsed = (booking_service.now() - timedelta(minutes=2)).replace(second=0, microsecond=0)
+    expected = elapsed.isoformat(timespec="seconds")
+    res = await booking_service.give_back(
+        C.zhang, bid, remark="外壳有划痕", returned_at=elapsed.strftime("%Y-%m-%dT%H:%M")
+    )
     if res["status"] != "returned" or not res["returned_at"]:
         return False, f"归还未落时间：{res}"
+    if res["returned_at"] != expected:
+        # 用户自填的归还时间必须被原样采纳（这是 R05 "填实际时间" 的核心），
+        # 不能被服务端时钟悄悄覆盖成"登记延迟"。
+        return False, f"归还时间未被采纳：填 {expected}，落库 {res['returned_at']}"
+
+    stored = await db.fetch_booking(bid)
+    if not stored or stored["returned_at"] != expected:
+        return False, f"库里的归还时间与返回值不一致：{stored['returned_at'] if stored else '查不到'}"
+    if not stored.get("remark") or "外壳有划痕" not in stored["remark"]:
+        return False, f"归还备注没落库：{stored.get('remark')}"
+
     try:
         await booking_service.give_back(C.zhang, bid)
     except ApiError as e:
@@ -247,6 +271,17 @@ async def r05() -> tuple[bool, str]:
             return False, f"重复归还应报 BOOKING_STATE_INVALID，实际 {e.code}"
     else:
         return False, "重复归还竟然成功"
+
+    # 不填归还时间也应成功：界面上"已归还"就该是一个按钮，不应强制填表。
+    # 这条同时守住 give_back 的返回值——没填时返回的必须是真正落库的那个时刻。
+    made0 = await booking_service.place_booking(C.zhang["id"], C.devices[2]["id"], day(12), ["10:00"])
+    bid0 = made0["bookings"][0]["id"]
+    await booking_service.pickup(C.zhang, bid0)
+    quick = await booking_service.give_back(C.zhang, bid0)
+    if not quick.get("returned_at"):
+        return False, "不填归还时间时返回值没有时间（库里会落服务端时间，返回值不该是 None）"
+    if quick["returned_at"][:10] != booking_service.now().date().isoformat():
+        return False, f"不填时间时应记当天，实际 {quick['returned_at']}"
     # 基线 R05 还有半句："未点取走的预约到时段结束自动置 expired，不占用后续格子"。
     # 过期扫描接受 now 参数，所以这里直接给它一个"当晚 21 点"，不必等系统时钟。
     made2 = await booking_service.place_booking(C.zhang["id"], C.devices[0]["id"], day(11), ["16:00"])

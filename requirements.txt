@@ -11,8 +11,11 @@
 #   "undefined symbol"，而且报错点在 faiss 内部，很难定位到是版本漂移。
 #   升级时请整组一起升，并在升级后跑一遍 `.venv/bin/python -m unittest discover -s tests`。
 #
-# Python：3.11+（开发与验证环境为 3.13.12）。
-#   用到 `X | None` 语法与 `datetime.astimezone()` 的现代行为，3.10 以下不要用。
+# Python：**3.12+**（开发与验证环境为 3.13.12，CI 固定 3.12）。
+#   下限由依赖决定，不是由语法决定：numpy 2.5.x 的 Requires-Python 就是 >=3.12，
+#   在 3.11 上 pip 会直接找不到可安装的版本（本项目 CI 曾因此红过一次）。
+#   语法上其实 3.10 就够（`X | None`、`datetime.astimezone()`），
+#   所以如果哪天必须回到 3.11，改的是 numpy 那一组，不是代码。
 
 # --- Web 框架 ---
 fastapi==0.162.0
@@ -26,8 +29,9 @@ pydantic==2.14.2
 pyjwt==2.15.1                 # HS256 会话令牌；密码哈希用标准库 hashlib.scrypt，无需额外依赖
 
 # --- 检索（RAG）---
-numpy==2.5.4
+numpy==2.5.4                  # Requires-Python >=3.12（2.5 整条线都是），这是 3.12 下限的来源
 faiss-cpu==1.15.1             # 向量索引；与 numpy 版本强绑定，升级需成对验证
+                              # wheel 覆盖 cp310–cp314，所以 3.12/3.13 都装得上
 rank-bm25==0.2.2              # 关键词通道
 jieba==0.42.1                 # 中文分词；缺失时脚本会自动退回「单字 + 二元组」，召回会变差
 

@@ -343,6 +343,12 @@ async def give_back(
         raise ApiError("INVALID_REQUEST", "备注不能超过 200 字")
 
     stamp = _normalize_returned_at(returned_at, now())
+    # 没填归还时间时，库里会落服务端当前时间（db.mark_returned 的 `returned_at or _now()`）。
+    # 这里把同一个值补上，是为了让**返回值和库里一致**：之前返回 None，
+    # 调用方（页面、自检脚本）拿到的 returned_at 和实际落库的不是一回事。
+    # 格式与 db._now() 保持同一口径。
+    if stamp is None:
+        stamp = now().isoformat(timespec="seconds")
     if not await db.mark_returned(booking_id, remark, stamp, actor=user, ip=ip):
         raise ApiError("BOOKING_STATE_INVALID", "该预约已归还或已取消")
     return {"id": booking_id, "status": "returned", "returned_at": stamp}

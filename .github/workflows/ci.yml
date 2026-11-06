@@ -21,16 +21,27 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          # requirements.txt 声明 Python 3.11+；这里固定 3.11 而不是 3.13，
-          # 因为 faiss-cpu 的 manylinux wheel 对小版本的支持慢一档，
-          # 用最低支持版本能更早暴露"新语法没兼容"的问题。
-          python-version: "3.11"
+          # 固定 3.12，是 requirements.txt 声明的最低支持版本（下限由 numpy 2.5.x 的
+          # Requires-Python >=3.12 决定，不是由本项目语法决定）。
+          #
+          # 曾经写的是 3.11，理由是「faiss wheel 对小版本支持慢一档，用最低版本更早
+          # 暴露兼容问题」。这个理由本身没错，但 3.11 已经低于依赖的下限了，
+          # 结果不是"暴露兼容问题"，而是 pip 直接装不上 numpy——红得没有信息量。
+          # 现在下限有据可查地是 3.12，CI 就钉在 3.12；本地开发用 3.13。
+          python-version: "3.12"
           cache: pip
 
       - name: 安装依赖
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: 依赖自检
+        # 只装得上不等于能用：requirements.txt 里锁死版本就是为了防 faiss 与 numpy
+        # 的 C ABI 漂移，而 ABI 不匹配的表现是 import 时 "undefined symbol"，
+        # 不是安装时报错。这一步把那个失败提前到装完立刻发生，日志也更短。
+        # 顺带守住解释器下限——3.11 那次就是版本不够被 pip 报成"找不到 numpy"。
+        run: python scripts/check_deps.py
 
       - name: 单元测试（130 项）
         run: python -m unittest discover -s tests -v

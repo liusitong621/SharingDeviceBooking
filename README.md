@@ -55,7 +55,7 @@ Excel 拦不住并发（两个人同时填同一格），也回答不了"这格�
 
 ## 60 秒上手
 
-Python 3.11+。依赖全部锁定在 `requirements.txt`：
+Python 3.12+（下限来自 `numpy==2.5.4` 的 `Requires-Python`）。依赖全部锁定在 `requirements.txt`：
 
 ```bash
 git clone <repo-url> && cd SharingDeviceBooking
