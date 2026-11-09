@@ -1,0 +1,22 @@
+# 云端源码构建只上传「跑起来真正需要」的文件。
+# 运行期数据（data/、.rag_cache/）、本地虚拟环境、测试与交付文档都不进镜像：
+# data/chat.db 带演示账号与口令哈希，更不该被复制进公开可拉取的镜像。
+.git/
+.github/
+.venv/
+.workbuddy/
+output/
+data/
+.rag_cache/
+tests/
+examples/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+*.docx
+*.xlsx
+*.png
+*.svg
+*.jpg
+*.genie

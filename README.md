@@ -7,7 +7,8 @@
 它回答一个具体问题：*这台设备这个时段到底有没有人占？为什么那一单会被重复预约？模型刚才到底做了什么？*
 
 > 设备、账号与制度文本均为**合成样本**，不含任何真实员工或企业信息。
-> 题目来自课程实践《共享设备预约与维护》，**不是上线系统**，未做部署、备份与压测（见[已知边界](#已知边界)）。
+> 题目来自课程实践《共享设备预约与维护》，**不是生产上线系统**；已有沙盒与 CloudBase 云托管两套演示部署，
+> 但未做生产级备份、压测与持久存储（见[已知边界](#已知边界)与[部署](#部署)）。
 
 ---
 
@@ -431,6 +432,28 @@ CREATE UNIQUE INDEX uq_booking_slot ON bookings(device_id, slot_date, slot_start
 「占着格子」对「超期未取」。这正好指出了关键词检索的边界，也是配真实 embedding 后该被救回的部分。
 详见 [`docs/检索评测.md`](./docs/检索评测.md)——**报告由脚本生成，改完参数重跑就能看到涨跌**。
 
+## 部署
+
+两种已验证的部署形态共用同一个启动入口 `scripts/serve.sh`（`PORT` 环境变量 → `uvicorn --host 0.0.0.0 --workers 1`）：
+
+| | 沙盒演示 | CloudBase 云托管 |
+|---|---|---|
+| 启动 | `PORT=$PORT bash scripts/serve.sh` | 容器 `CMD ["bash", "scripts/serve.sh"]` |
+| 端口 | 平台注入 `PORT` | **8080**（配置与环境变量一致） |
+| 依赖 | `requirements.sandbox.txt`（Python 3.11 档） | `requirements.txt`（镜像 `python:3.12-slim`） |
+| 入口 | `https://device-booking-assistant.app.workbuddy.host/?sharecode=KGUXDCPFIW` | `https://device-booking-344245-9-1523335746.sh.run.tcloudbase.com/` |
+
+### CloudBase 云托管参数
+
+- 环境 `comprehensive-slug-d6cln9052177d`（ap-shanghai，Trial）；服务名 `device-booking`，容器型、公网访问；`cloudbaserc.json` 记录环境与服务名。
+- 规格 0.5 核 / 1 GB，`MinNum=1`、`MaxNum=2`。常驻 1 实例是为了让会话锁与 RAG 索引不必每次冷启动重建。
+- **端口必须三处一致**：`Dockerfile` 的 `ENV PORT` / `EXPOSE`、`serverConfig.Port=8080`、`EnvParams.PORT=8080`。平台会向容器注入自己的 `PORT`，少改一处就表现为「实例起来了但健康检查连不上」。
+- **时区固定 `Asia/Shanghai`**：制度按服务器本地时间判定 08:00–20:00 的可预约格子，容器默认 UTC 会整体偏 8 小时，而且不报错、只把预约判定悄悄算错。
+- 重新部署：先 `bash scripts/prepare_cloudbase.sh` 生成 `build/cloudbase/`（约 1.3 MB，只含构建需要的文件），再把它作为 `targetPath` 调 `manageCloudRun(action="deploy", serverName="device-booking", ...)`；复用同名服务会新增版本而不是换域名。**不要直接把项目根当 `targetPath`**：云端源码打包不读 `.dockerignore`，实测会把 `.venv/`（109 MB）和 `data/chat.db`（含演示账号口令哈希）一起送进构建机。`cloudbaserc.json` 记录环境与服务名。
+- 巡检打 `/api/healthz`（无鉴权）：健康形状为 `status=ok, db=ok, rag=ready, chunks=9`。`/healthz` 是同一处理函数的另一条路径，留给自有服务器。
+
+**数据持久性是明确边界**：镜像不含 `data/chat.db`，首次启动由 `app/seed.py` 写入 3 个演示账号与 3 台设备；容器文件系统不持久，**重启或重新部署会回到初始演示数据**。账号 `admin / Admin@12345`、`1001 / Staff@12345`、`1002 / Staff@12345`，首次登录强制改密（与沙盒部署里重置过的 admin 口令不同）。RAG 索引同样在启动时从 `docs/` 的制度正本重建，约 0.3 秒、9 个切片。正式使用必须把 `data/` 换成持久卷或托管数据库。
+
 ## 数据与合规
 
 - `data/` 下全部为**合成样本**：3 台虚构设备、3 个虚构账号，制度文本为自撰，不对应任何真实企业。
@@ -473,11 +496,16 @@ docs/
   sequence.svg              一次 AI 预约的 8 步（竖排，可直接贴 PPT）
   er.svg                    13 张表的分组、关键约束与主要关系
   检索评测.md               20 条问题 × 三路配置的 Recall/MRR，由脚本生成
-  manuals/                  设备借用制度（RAG 语料）
-tests/                 6 个测试文件，130 项
+  4.设备借用制度.md         设备借用制度（RAG 语料正本；docs/manuals/ 被重排后由 rag.py 自动回退）
+Dockerfile              CloudBase 云托管镜像（Python 3.12 / 8080 / Asia/Shanghai）
+.dockerignore           构建上下文过滤，排除运行期数据与交付文档
+cloudbaserc.json        CloudBase 环境与服务名
+tests/                 10 个测试文件，137 项
 scripts/
+  serve.sh             单端口启动入口（本地 / 沙盒 / 云托管共用）
+  prepare_cloudbase.sh 生成 CloudBase 干净构建上下文（build/cloudbase/）
   verify.sh            自检入口（找 .venv 的 python，转调 verify.py）
-  verify.py            130 项单测 + R01–R08 工具侧核对，输出 PASS/FAIL 表
+  verify.py            137 项单测 + R01–R08 工具侧核对，输出 PASS/FAIL 表
   stage1_rag_prototype.py   阶段 1 单文件原型（检索核心模块唯一定义处）
   eval_rag.py          检索评测：20 条问题 × BM25 / 向量 / 融合，出 Hit@1/3 与 MRR
 examples/

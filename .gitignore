@@ -8,3 +8,5 @@ __pycache__/
 # 运行期数据：会话与消息，不入库
 data/
 output/
+# CloudBase 云托管的临时构建上下文，由 scripts/prepare_cloudbase.sh 生成
+build/

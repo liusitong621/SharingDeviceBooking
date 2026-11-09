@@ -52,6 +52,13 @@ STAGE1_FILE = PROJECT_ROOT / "scripts" / "stage1_rag_prototype.py"
 # 默认语料目录。**单独一个 manuals/ 目录，不要和调研报告混在一起**——
 # 阶段 1 已经验证过：223 个调研切片会把真正的规程文档挤出 top3。
 DEFAULT_DOCS_DIR = PROJECT_ROOT / "docs" / "manuals"
+# docs/ 被整理成「1.… 2.…」编号前缀后，manuals/ 目录会整体消失。它是运行依赖，
+# 不是普通文档，目录一没索引就建空、rag 直接 degraded。与其要求整理文档的人
+# 记住这条约定，不如让代码自己兜底：退回 docs/ 根目录，但只挑制度正本。
+# pattern 必须收窄——实测 223 个调研切片会把规程文档挤出 top3（scripts/eval_rag.py），
+# 把整个 docs/ 当语料等于把问答功能弄坏，只是坏得更隐蔽。
+FALLBACK_DOCS_DIR = PROJECT_ROOT / "docs"
+FALLBACK_DOCS_PATTERN = "*设备借用制度*.md"
 DEFAULT_UPLOAD_DIR = PROJECT_ROOT / "data" / "kb" / "uploads"
 DEFAULT_PATTERN = "*.md"
 
@@ -81,9 +88,25 @@ _lock = asyncio.Lock()
 # =============================================================================
 
 
+def _docs_layout() -> tuple[Path, str]:
+    """返回 (语料目录, 文件 glob)。目录与 pattern 必须成对决定，否则回退到 docs/
+    时还会用 *.md，等于把调研报告一起切进索引。
+
+    显式设置 RAG_DOCS_DIR 时完全尊重调用方（测试、离线部署都靠它），
+    即使指向的目录不存在也不做回退——静默换目录会让测试跑到错误的语料上。
+    """
+    explicit_dir = os.getenv("RAG_DOCS_DIR")
+    explicit_pattern = os.getenv("RAG_PATTERN")
+    if explicit_dir:
+        return Path(explicit_dir), (explicit_pattern or DEFAULT_PATTERN)
+    if DEFAULT_DOCS_DIR.is_dir():
+        return DEFAULT_DOCS_DIR, (explicit_pattern or DEFAULT_PATTERN)
+    return FALLBACK_DOCS_DIR, (explicit_pattern or FALLBACK_DOCS_PATTERN)
+
+
 def builtin_dir() -> Path:
     """内置语料目录。可用 RAG_DOCS_DIR 覆盖（测试与离线部署都要用）。"""
-    return Path(os.getenv("RAG_DOCS_DIR") or DEFAULT_DOCS_DIR)
+    return _docs_layout()[0]
 
 
 def upload_dir() -> Path:
@@ -92,7 +115,7 @@ def upload_dir() -> Path:
 
 
 def _builtin_pattern() -> str:
-    return os.getenv("RAG_PATTERN") or DEFAULT_PATTERN
+    return _docs_layout()[1]
 
 
 def trash_dir() -> Path:
